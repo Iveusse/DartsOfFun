@@ -4,7 +4,7 @@
 
 export const AIM_CONFIG = {
   // Décalage de la fléchette au-dessus du doigt, pour qu'il ne la cache pas (px).
-  fingerOffsetPx: 150,
+  fingerOffsetPx: 60,
   // Dérive lente de la main (mm) : part de swayStart et monte jusqu'à swayMax en swayRamp secondes.
   // Elle est régulière et part du moment où le doigt se pose : mêmes durées, mêmes dérives.
   swayStart: 1.5,

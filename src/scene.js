@@ -185,8 +185,8 @@ export function createScene(canvas) {
       dart.scale.setScalar(DART_SCALE * HAND_SCALE);
       dart.quaternion.setFromUnitVectors(FORWARD, startDir);
 
-      const arc = 35; // cloche légère
-      const duration = 480;
+      const arc = 8; // presque pas de cloche : l effet vient de la perspective
+      const duration = 150; // très rapide, comme dans Darts of Fury (environ 0,1 s)
       const t0 = performance.now();
 
       const posAt = (t) => {

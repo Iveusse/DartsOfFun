@@ -182,8 +182,8 @@ export function createScene(canvas) {
       dart.position.copy(start);
       dart.quaternion.setFromUnitVectors(FORWARD, startDir);
 
-      const arc = 150; // la fléchette part en cloche
-      const duration = 650;
+      const arc = 35; // cloche légère
+      const duration = 480;
       const t0 = performance.now();
 
       const posAt = (t) => {

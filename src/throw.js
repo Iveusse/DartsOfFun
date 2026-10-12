@@ -14,8 +14,8 @@ export const AIM_CONFIG = {
   leadSeconds: 0.15,
   maxLead: 70,
   // La fléchette part en cloche et retombe plus haut que la pointe (mm), comme dans Darts of Fury :
-  // il ne suffit pas de poser la pointe sur le T20. Pointe au centre = environ T20.
-  lift: 93,
+  // il ne suffit pas de poser la pointe sur le T20. Pointe un peu sous le T20 = T20.
+  lift: 45,
   // Rayon max de visée (mm), pour rester dans l'image.
   maxRadius: 255,
 };

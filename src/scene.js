@@ -6,7 +6,8 @@ import { ORDER, RADII } from './board.js';
 const BOARD_RADIUS = 200; // cible + couronne des numéros
 const FOV = 40;
 const DART_SCALE = 1.4;
-const HAND_DEPTH = 430; // distance caméra -> fléchette tenue pendant la visée (on ne voit que sa pointe)
+const HAND_DEPTH = 430; // distance caméra -> pointe de la fléchette tenue
+const HAND_TILT = 1.15; // la fléchette tenue est relevée d'environ 50° : on la voit en long, comme dans Darts of Fury
 const LAMP_POS = new THREE.Vector3(0, 415, 150);
 
 export function createScene(canvas) {
@@ -55,12 +56,25 @@ export function createScene(canvas) {
   scene.add(hand);
   const aim = { active: false, x: 0, y: 0 };
   const handTarget = new THREE.Vector3();
+  const handDir = new THREE.Vector3();
   const handQuatTarget = new THREE.Quaternion();
   const FORWARD = new THREE.Vector3(0, 0, -1);
 
-  function idlePosition() {
-    // en bas de l'écran, devant la caméra
-    return new THREE.Vector3(0, camBaseY - 105, camDistance - 420);
+  // Pose de la fléchette tenue : la pointe est sur la ligne de vue du point visé, près de la caméra,
+  // et la fléchette est relevée pour qu'on la voie en long.
+  function handPose(boardX, boardY, outPos, outDir) {
+    tmpB.set(boardX, boardY, 0);
+    outPos
+      .copy(camera.position)
+      .add(tmpV.copy(tmpB).sub(camera.position).multiplyScalar(HAND_DEPTH / camDistance));
+    outDir.copy(tmpB).sub(outPos).normalize();
+    outDir.y += HAND_TILT;
+    outDir.normalize();
+  }
+
+  // au repos, la fléchette est au centre bas de l'écran
+  function idleBoardPoint() {
+    return screenToBoard(window.innerWidth / 2, window.innerHeight * 0.74);
   }
 
   function resize() {
@@ -101,7 +115,9 @@ export function createScene(canvas) {
   function showHand(visible) {
     hand.visible = visible;
     if (visible) {
-      hand.position.copy(idlePosition());
+      const p = idleBoardPoint();
+      handPose(p.x, p.y, hand.position, handDir);
+      hand.quaternion.setFromUnitVectors(FORWARD, handDir);
       aim.active = false;
     }
   }
@@ -153,11 +169,21 @@ export function createScene(canvas) {
       };
       const onBoard = Math.hypot(hit.x, hit.y) <= BOARD_RADIUS + 38;
       const end = new THREE.Vector3(hit.x, hit.y, onBoard ? -9 : -28);
-      const start = fromHand ? hand.position.clone() : idlePosition();
-      if (fromHand) hand.visible = false;
+      const start = new THREE.Vector3();
+      const startDir = new THREE.Vector3();
+      if (fromHand) {
+        start.copy(hand.position);
+        startDir.copy(FORWARD).applyQuaternion(hand.quaternion);
+        hand.visible = false;
+      } else {
+        const p = idleBoardPoint();
+        handPose(p.x, p.y, start, startDir);
+      }
+      dart.position.copy(start);
+      dart.quaternion.setFromUnitVectors(FORWARD, startDir);
 
-      const arc = fromHand ? 95 : 110; // la fléchette part en cloche
-      const duration = fromHand ? 540 : 580;
+      const arc = 150; // la fléchette part en cloche
+      const duration = 650;
       const t0 = performance.now();
 
       const posAt = (t) => {
@@ -174,7 +200,11 @@ export function createScene(canvas) {
 
         const dir = posAt(Math.min(1, t + 0.02)).sub(p);
         if (dir.lengthSq() > 1e-6) {
-          dir.normalize().lerp(finalDir, t * t).normalize();
+          dir.normalize();
+          // au départ elle garde l'angle de la main, puis suit la courbe, puis se plante
+          const w = Math.max(0, 1 - t / 0.3);
+          if (w > 0) dir.lerp(startDir, w * w).normalize();
+          dir.lerp(finalDir, t * t).normalize();
           dart.quaternion.setFromUnitVectors(FORWARD, dir);
         }
 
@@ -219,26 +249,15 @@ export function createScene(canvas) {
     camera.position.y = camBaseY + Math.sin(t * 0.8) * 1.5;
     camera.lookAt(0, camBaseY, 0);
 
-    // fléchette en main : au repos on la voit entière, en visée on ne voit que la pointe
-    hand.userData.shaft.visible = !aim.active;
-    hand.userData.barrel.visible = !aim.active;
-    hand.userData.nose.visible = aim.active;
-    for (const f of hand.userData.flights) f.visible = !aim.active;
+    // fléchette en main
     if (hand.visible) {
       if (aim.active) {
-        // sur la ligne de vue du point visé, près de la caméra : la pointe se superpose à la cible
-        tmpB.set(aim.x, aim.y, 0);
-        handTarget.copy(camera.position).add(tmpV.copy(tmpB).sub(camera.position).multiplyScalar(HAND_DEPTH / camDistance));
-        // la pointe est un peu relevée : on voit l'aiguille et le nez du corps, comme dans Darts of Fury
-        tmpV.copy(tmpB).sub(handTarget).normalize();
-        tmpV.y += 0.45;
-        tmpV.normalize();
+        handPose(aim.x, aim.y, handTarget, handDir);
       } else {
-        handTarget.copy(idlePosition());
-        handTarget.y += Math.sin(t * 2) * 1.5;
-        tmpV.set(0, 0, 0).sub(handTarget).normalize();
+        const p = idleBoardPoint();
+        handPose(p.x, p.y + Math.sin(t * 2) * 1.5, handTarget, handDir);
       }
-      handQuatTarget.setFromUnitVectors(FORWARD, tmpV);
+      handQuatTarget.setFromUnitVectors(FORWARD, handDir);
       const k = 1 - Math.exp(-dt * (aim.active ? 30 : 12));
       hand.position.lerp(handTarget, k);
       hand.quaternion.slerp(handQuatTarget, k);
@@ -546,22 +565,32 @@ function flightTexture() {
   c.width = 128;
   c.height = 256;
   const g = c.getContext('2d');
-  g.fillStyle = '#d92f27';
+  g.fillStyle = '#2b1163';
   g.fillRect(0, 0, 128, 256);
-  g.fillStyle = '#15100e';
-  g.fillRect(0, 0, 16, 256); // bande côté axe
-  g.fillRect(0, 230, 128, 26); // liseré du bord arrière
-  g.fillStyle = '#ffd23f';
+
+  const tri = (color, pts) => {
+    g.fillStyle = color;
+    g.beginPath();
+    g.moveTo(pts[0], pts[1]);
+    for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]);
+    g.closePath();
+    g.fill();
+  };
+  tri('#e0307c', [0, 0, 128, 0, 0, 150]);
+  tri('#2fd0e8', [128, 40, 128, 150, 30, 256]);
+  tri('#f4f1ff', [0, 120, 56, 256, 0, 256]);
+  tri('#7a2fd0', [60, 0, 128, 0, 128, 70]);
+  tri('#ffc233', [52, 200, 76, 200, 64, 232]);
+  g.strokeStyle = 'rgba(255,255,255,0.85)';
+  g.lineWidth = 3;
   g.beginPath();
-  g.moveTo(84, 30);
-  g.lineTo(44, 130);
-  g.lineTo(72, 130);
-  g.lineTo(50, 214);
-  g.lineTo(112, 108);
-  g.lineTo(82, 108);
-  g.lineTo(108, 30);
-  g.closePath();
-  g.fill();
+  g.moveTo(0, 150);
+  g.lineTo(128, 40);
+  g.moveTo(30, 256);
+  g.lineTo(128, 150);
+  g.stroke();
+  g.fillStyle = '#0e0a1c';
+  g.fillRect(0, 0, 10, 256); // bande côté axe
   return srgb(new THREE.CanvasTexture(c));
 }
 
@@ -602,18 +631,14 @@ function getDartParts() {
   }
   flight.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
 
-  // juste le nez du corps, fermé : ce qu'on voit quand on tient la fléchette
-  const nose = lathe([[0, -38], [3.5, -38], [3.3, -34], [2.8, -30], [2.0, -26], [1.5, -22]], 28);
-
   dartParts = {
     tip,
-    nose,
     barrel,
     shaft,
     flight,
     steel: new THREE.MeshStandardMaterial({ color: 0xe6e8ec, metalness: 1, roughness: 0.18 }),
     tungsten: new THREE.MeshStandardMaterial({ color: 0x9aa0aa, metalness: 1, roughness: 0.28, side: THREE.DoubleSide }),
-    anodized: new THREE.MeshStandardMaterial({ color: 0x2f6fd8, metalness: 0.85, roughness: 0.35, side: THREE.DoubleSide }),
+    anodized: new THREE.MeshStandardMaterial({ color: 0x16171b, metalness: 0.7, roughness: 0.4, side: THREE.DoubleSide }),
     flightMat: new THREE.MeshStandardMaterial({
       map: flightTexture(),
       side: THREE.DoubleSide,
@@ -636,10 +661,10 @@ function makeDart() {
     new THREE.Mesh(parts.barrel, parts.tungsten),
     new THREE.Mesh(parts.shaft, parts.anodized),
   ];
-  const roll = Math.random() * Math.PI * 2; // chaque fléchette tourne un peu sur elle-même
-  for (let i = 0; i < 3; i += 1) {
+  const roll = Math.PI / 4; // quatre ailerons en X, vus de derrière
+  for (let i = 0; i < 4; i += 1) {
     const f = new THREE.Mesh(parts.flight, parts.flightMat);
-    f.rotation.y = roll + (i * Math.PI * 2) / 3;
+    f.rotation.y = roll + (i * Math.PI) / 2;
     meshes.push(f);
   }
   for (const m of meshes) {
@@ -648,9 +673,6 @@ function makeDart() {
   }
 
   dart.scale.setScalar(DART_SCALE);
-  const nose = new THREE.Mesh(parts.nose, parts.tungsten);
-  nose.visible = false; // n'apparaît que sur la fléchette tenue pendant la visée
-  inner.add(nose);
-  dart.userData = { barrel: meshes[1], shaft: meshes[2], nose, flights: meshes.slice(3) };
+
   return dart;
 }

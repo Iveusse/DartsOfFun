@@ -105,20 +105,26 @@ test('visée : le même geste donne exactement le même tir', () => {
 });
 
 test('visée : sans dérive ni élan, l\'impact est le point visé', () => {
-  const cfg = { ...AIM_CONFIG, swayStart: 0, swayMax: 0, drop: 0 };
+  const cfg = { ...AIM_CONFIG, swayStart: 0, swayMax: 0, lift: 0 };
   const target = segmentPoint(20, 'treble');
   const hit = aimToHit(target, 3, { x: 0, y: 0 }, undefined, cfg);
   assert.equal(scoreAt(hit.x, hit.y).label, 'T20');
 });
 
-test('visée : la pointe sur le T20 ne donne pas un T20, la cloche retombe plus bas', () => {
+test('visée : la pointe sur le T20 ne donne pas un T20, la cloche monte plus haut', () => {
   const target = segmentPoint(20, 'treble');
   const hit = aimToHit(target, 0);
-  assert.ok(hit.y < target.y);
+  assert.ok(hit.y > target.y);
   assert.notEqual(scoreAt(hit.x, hit.y).label, 'T20');
-  // en visant plus haut du bon écart, on retrouve le T20
-  const corrected = aimToHit({ x: target.x, y: target.y + AIM_CONFIG.drop }, 0);
+  // en posant la pointe plus bas du bon écart, on retrouve le T20
+  const corrected = aimToHit({ x: target.x, y: target.y - AIM_CONFIG.lift }, 0);
   assert.equal(scoreAt(corrected.x, corrected.y).label, 'T20');
+});
+
+test('visée : pointe au centre et geste lent = environ le T20', () => {
+  const hit = aimToHit({ x: 0, y: 0 }, 1);
+  const label = scoreAt(hit.x, hit.y).label;
+  assert.ok(['T20', 'S20'].includes(label), label);
 });
 
 test('visée : l\'élan prolonge le mouvement du doigt, avec un plafond', () => {

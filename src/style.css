@@ -136,6 +136,7 @@ body {
   left: 0;
   right: 0;
   bottom: max(18px, env(safe-area-inset-bottom));
+  padding-left: 70px;
   margin: 0;
   text-align: center;
   font-size: 0.85rem;
@@ -194,3 +195,95 @@ button {
 button:active {
   transform: scale(0.97);
 }
+
+/* ---------- Infos de partie ---------- */
+#info {
+  position: fixed;
+  top: calc(max(10px, env(safe-area-inset-top)) + 62px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+  pointer-events: none;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
+#marks {
+  position: fixed;
+  top: calc(max(10px, env(safe-area-inset-top)) + 82px);
+  left: 10px;
+  right: 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 4px 6px;
+  background: var(--card);
+  border-radius: 10px;
+  font-size: 0.8rem;
+  pointer-events: none;
+}
+#marks[hidden] { display: none; }
+#marks .col { flex: 1; text-align: center; line-height: 1.25; }
+#marks .col b { display: block; color: var(--text); }
+#marks .col.closed b { color: var(--gold); }
+#marks .me { color: #ffb86b; }
+#marks .opp { color: #8fd0ff; }
+
+#menuBtn {
+  position: fixed;
+  left: 10px;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  color: var(--text);
+  background: rgba(20, 14, 10, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* ---------- Fin de partie ---------- */
+#modal-coins { margin: -8px 0 16px; color: var(--gold); font-weight: 800; }
+#modal-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+button.ghost { background: transparent; color: var(--text); border: 1px solid rgba(255, 255, 255, 0.3); }
+
+/* ---------- Écrans (menu, histoire, boutique) ---------- */
+#screen {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  padding: max(18px, env(safe-area-inset-top)) 16px 28px;
+  background: radial-gradient(ellipse at 50% 0%, #3a2518 0%, #120d0a 70%);
+}
+#screen[hidden] { display: none; }
+#screen .wrap { max-width: 460px; margin: 0 auto; }
+#screen h1 { margin: 6px 0 2px; font-size: 2rem; text-align: center; letter-spacing: 0.5px; }
+#screen h2 { margin: 18px 0 8px; font-size: 1.05rem; color: var(--gold); }
+#screen .sub { margin: 0 0 18px; text-align: center; color: var(--muted); }
+.coins { text-align: center; font-weight: 800; color: var(--gold); margin-bottom: 14px; }
+.menu-btn { display: block; width: 100%; margin: 10px 0; padding: 16px; font-size: 1.1rem; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip {
+  padding: 10px 14px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid transparent;
+  border-radius: 10px;
+}
+.chip.on { border-color: var(--gold); background: rgba(242, 193, 78, 0.18); }
+.item {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  margin: 8px 0;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+}
+.item.locked { opacity: 0.45; }
+.item .t { font-weight: 700; }
+.item .d { font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
+.item button { white-space: nowrap; padding: 9px 14px; }
+.swatch { display: inline-block; width: 38px; height: 20px; border-radius: 4px; margin-right: 8px; vertical-align: middle; }
+.back { margin-bottom: 8px; }

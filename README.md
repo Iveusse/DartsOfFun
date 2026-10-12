@@ -3,20 +3,18 @@
 Jeu de fléchettes solo en 3D, dans le navigateur, pensé pour le téléphone.
 Pas de jetons, pas d'achat : tout se gagne en jouant.
 
-## Où on en est (étape 1)
+## Où on en est
 
-- Pub en briques, cible en relief avec fils métalliques, fléchettes 3D avec ombres (Three.js)
-- Contrôle comme Darts of Fury : on pose le doigt, on fait glisser la pointe sur la cible, on relâche : la fléchette part en cloche et retombe plus haut que la pointe (aucun hasard : le même geste donne toujours le même tir)
-- Match en 201 contre Gérard, 3 fléchettes par volée, bust géré
-- Sortie libre par défaut (le double out est prêt dans le code, à activer dans `src/main.js`)
-- Phrases d'ambiance dans `src/jokes.js`
+- Pub en briques, cible en relief, fléchettes 3D (Three.js), lancer inspiré de Darts of Fury (la fléchette se fait glisser puis part très vite, aucun hasard)
+- Modes : X01 (201 à 701, sortie libre ou double out), Count Up, Shanghai, Cricket
+- Mode histoire : 10 chapitres contre des adversaires humoristiques, du 201 au 701 (`src/story.js`)
+- Pièces gagnées en jouant, boutique de fléchettes à compromis (aucune n'est meilleure qu'une autre) et d'ailerons de couleur (`src/darts.js`)
+- Sauvegarde locale dans le navigateur (`src/save.js`)
+- Le design néon est conservé sur la branche `neon`
 
 ## Prévu
 
-- Progression 201 → 701
-- Modes Count Up, Shanghai, Cricket
-- Mode histoire avec adversaires
-- Pièces gagnées en jouant, fléchettes à compromis (pas de pay to win)
+- Plus d'adversaires et de chapitres, parties à plusieurs, stats
 
 ## Lancer en local
 

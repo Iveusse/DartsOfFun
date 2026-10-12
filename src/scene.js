@@ -306,7 +306,13 @@ export function createScene(canvas) {
   window.addEventListener('resize', resize);
   loop();
 
-  return { flyDart, clearDarts, resize, screenToBoard, setAim, setAimActive, showHand };
+  function setFlightStyle(colors) {
+    const mat = getDartParts().flightMat;
+    mat.map = flightTexture(colors);
+    mat.needsUpdate = true;
+  }
+
+  return { setFlightStyle, flyDart, clearDarts, resize, screenToBoard, setAim, setAimActive, showHand };
 }
 
 // ---------- Décor ----------
@@ -564,12 +570,14 @@ function lathe(points, segments = 20) {
   return new THREE.LatheGeometry(points.map(([r, y]) => new THREE.Vector2(r, y)), segments);
 }
 
-function flightTexture() {
+const DEFAULT_FLIGHT = { base: '#10143a', a: '#b3123f', b: '#2a6fb8', c: '#d9d6e6', d: '#3a1d7a', e: '#c99a2e' };
+
+function flightTexture(col = DEFAULT_FLIGHT) {
   const c = document.createElement('canvas');
   c.width = 128;
   c.height = 256;
   const g = c.getContext('2d');
-  g.fillStyle = '#10143a';
+  g.fillStyle = col.base;
   g.fillRect(0, 0, 128, 256);
 
   const tri = (color, pts) => {
@@ -580,11 +588,11 @@ function flightTexture() {
     g.closePath();
     g.fill();
   };
-  tri('#b3123f', [0, 0, 128, 0, 0, 150]);
-  tri('#2a6fb8', [128, 40, 128, 150, 30, 256]);
-  tri('#d9d6e6', [0, 120, 56, 256, 0, 256]);
-  tri('#3a1d7a', [60, 0, 128, 0, 128, 70]);
-  tri('#c99a2e', [52, 200, 76, 200, 64, 232]);
+  tri(col.a, [0, 0, 128, 0, 0, 150]);
+  tri(col.b, [128, 40, 128, 150, 30, 256]);
+  tri(col.c, [0, 120, 56, 256, 0, 256]);
+  tri(col.d, [60, 0, 128, 0, 128, 70]);
+  tri(col.e, [52, 200, 76, 200, 64, 232]);
   g.strokeStyle = 'rgba(235,235,245,0.7)';
   g.lineWidth = 3;
   g.beginPath();

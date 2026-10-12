@@ -3,6 +3,7 @@
 export class X01Game {
   constructor({ start = 201, players = ['Toi', 'Gérard'], doubleOut = false } = {}) {
     this.start = start;
+    this.kind = 'x01';
     this.names = players;
     this.doubleOut = doubleOut;
     this.scores = players.map(() => start);
@@ -16,6 +17,18 @@ export class X01Game {
 
   get over() {
     return this.winner !== null;
+  }
+
+  display(i) {
+    return String(this.scores[i]);
+  }
+
+  info() {
+    return `${this.start}${this.doubleOut ? ', double out' : ''}`;
+  }
+
+  progress(i) {
+    return this.scores[i] / this.start;
   }
 
   get dartsLeft() {

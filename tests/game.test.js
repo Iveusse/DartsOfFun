@@ -155,3 +155,81 @@ test('adversaire : sans erreur il touche sa cible', () => {
   const p = aiThrow({ remaining: 201, doubleOut: false, sigma: 0 }, () => seq[i++ % 2]);
   assert.equal(scoreAt(p.x, p.y).label, 'T20');
 });
+
+import { CountUpGame } from '../src/modes/countup.js';
+import { ShanghaiGame } from '../src/modes/shanghai.js';
+import { CricketGame } from '../src/modes/cricket.js';
+
+const h = (n, ring) => {
+  const p = segmentPoint(n, ring);
+  return scoreAt(p.x, p.y);
+};
+
+test('Count Up : 8 manches, le plus haut gagne', () => {
+  const g = new CountUpGame({ rounds: 2 });
+  for (let r = 0; r < 2; r += 1) {
+    for (let p = 0; p < 2; p += 1) {
+      for (let d = 0; d < 3; d += 1) g.throwDart(p === 0 ? h(20, 'treble') : h(1, 'single'));
+      if (!g.over) g.nextTurn();
+    }
+  }
+  assert.equal(g.over, true);
+  assert.equal(g.scores[0], 360);
+  assert.equal(g.scores[1], 6);
+  assert.equal(g.winner, 0);
+});
+
+test('Shanghai : seul le numéro de la manche compte', () => {
+  const g = new ShanghaiGame();
+  g.throwDart(h(1, 'treble'));
+  g.throwDart(h(2, 'treble'));
+  assert.equal(g.scores[0], 3);
+});
+
+test('Shanghai : simple + double + triple = victoire immédiate', () => {
+  const g = new ShanghaiGame();
+  g.throwDart(h(1, 'single'));
+  g.throwDart(h(1, 'double'));
+  const e = g.throwDart(h(1, 'treble'));
+  assert.equal(e.shanghai, true);
+  assert.equal(g.over, true);
+  assert.equal(g.winner, 0);
+});
+
+test('Cricket : fermer, puis marquer tant que l\'autre n\'a pas fermé', () => {
+  const g = new CricketGame();
+  g.throwDart(h(20, 'treble')); // ferme le 20
+  assert.equal(g.closed(0, 20), true);
+  assert.equal(g.scores[0], 0);
+  g.throwDart(h(20, 'single')); // 1 marque en trop : 20 points
+  assert.equal(g.scores[0], 20);
+  g.nextTurn();
+  g.throwDart(h(20, 'treble')); // l'adversaire ferme à son tour
+  g.nextTurn();
+  g.throwDart(h(20, 'single')); // plus de points : fermé des deux côtés
+  assert.equal(g.scores[0], 20);
+});
+
+test('Cricket : le bull extérieur vaut 1 marque, le bull 2', () => {
+  const g = new CricketGame();
+  g.throwDart(scoreAt(0, 11));
+  assert.equal(g.marks[0][25], 1);
+  g.throwDart(scoreAt(0, 0));
+  assert.equal(g.marks[0][25], 3);
+});
+
+test('Cricket : tout fermer avec plus de points = victoire', () => {
+  const g = new CricketGame();
+  for (const n of [20, 19, 18, 17, 16, 15]) {
+    g.nextTurn(); g.nextTurn();
+    g.dartsInTurn = 0;
+    g.throwDart(h(n, 'treble'));
+  }
+  g.dartsInTurn = 0;
+  const e = g.throwDart(scoreAt(0, 0)); // bull : 2 marques
+  assert.equal(e.win, false);
+  g.dartsInTurn = 0;
+  const f = g.throwDart(scoreAt(0, 0));
+  assert.equal(f.win, true);
+  assert.equal(g.winner, 0);
+});

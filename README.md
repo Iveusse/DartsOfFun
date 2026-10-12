@@ -5,8 +5,8 @@ Pas de jetons, pas d'achat : tout se gagne en jouant.
 
 ## Où on en est (étape 1)
 
-- Arène néon sombre, cible lumineuse, scores en tours de cubes qui éclatent, fléchettes 3D (Three.js)
-- Contrôle comme Darts of Fury : on pose le doigt, on fait glisser la pointe sur la cible, on relâche : la fléchette part en cloche et retombe un peu plus haut que la pointe, très vite (aucun hasard : le même geste donne toujours le même tir)
+- Pub en briques, cible en relief avec fils métalliques, fléchettes 3D avec ombres (Three.js)
+- Contrôle comme Darts of Fury : on pose le doigt, on fait glisser la pointe sur la cible, on relâche : la fléchette part en cloche et retombe plus haut que la pointe (aucun hasard : le même geste donne toujours le même tir)
 - Match en 201 contre Gérard, 3 fléchettes par volée, bust géré
 - Sortie libre par défaut (le double out est prêt dans le code, à activer dans `src/main.js`)
 - Phrases d'ambiance dans `src/jokes.js`

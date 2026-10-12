@@ -113,26 +113,6 @@ function renderScores() {
     $(`score-${i}`).textContent = String(game.scores[i]);
     $(`card-${i}`).classList.toggle('active', game.current === i && !game.over);
   });
-  scene.setScores(
-    game.scores.map((v) => v / game.start),
-    !firstRender,
-  );
-  firstRender = false;
-}
-
-let firstRender = true;
-
-// gros chiffre qui apparaît au point d'impact
-function popup(pos, hit, bust) {
-  const el = $('pop');
-  const pt = scene.boardToScreen(pos.x, pos.y);
-  const text = bust ? 'BUST' : hit.ring === 'miss' ? 'RATÉ' : `${hit.number === 25 ? (hit.ring === 'bull' ? 50 : 25) : hit.number}${hit.multiplier > 1 && hit.number !== 25 ? ` ×${hit.multiplier}` : ''}`;
-  el.textContent = text;
-  el.style.left = `${pt.x}px`;
-  el.style.top = `${pt.y - 30}px`;
-  el.classList.remove('show');
-  void el.offsetWidth;
-  el.classList.add('show');
 }
 
 function renderDots() {
@@ -152,7 +132,6 @@ function showModal(title, text) {
 
 async function playMatch() {
   game = new X01Game(MATCH);
-  firstRender = true;
   scene.clearDarts();
   $('modal').hidden = true;
   setCallout('');
@@ -172,9 +151,7 @@ async function playMatch() {
       let pos;
       if (human) {
         scene.showHand(true);
-        scene.setBoardDim(false);
         pos = await awaitThrow();
-        scene.setBoardDim(true);
         await scene.flyDart(pos, { fromHand: true });
       } else {
         scene.showHand(false);
@@ -184,13 +161,11 @@ async function playMatch() {
           doubleOut: game.doubleOut,
           sigma: MATCH.opponentSigma,
         });
-        scene.setBoardDim(true);
         await scene.flyDart(pos);
       }
 
       const hit = scoreAt(pos.x, pos.y);
       const event = game.throwDart(hit);
-      popup(pos, hit, event.bust);
       renderScores();
       renderDots();
       setCallout(calloutFor(event, game.names));
@@ -200,7 +175,6 @@ async function playMatch() {
     }
 
     scene.clearDarts();
-    scene.setBoardDim(false);
     if (game.over) break;
     game.nextTurn();
     setCallout('');

@@ -6,8 +6,9 @@ import { ORDER, RADII } from './board.js';
 const BOARD_RADIUS = 200; // cible + couronne des numéros
 const FOV = 40;
 const DART_SCALE = 1.4;
+const HAND_SCALE = 0.7; // la fléchette tenue est plus petite pour ne pas écraser la cible
 const HAND_DEPTH = 430; // distance caméra -> pointe de la fléchette tenue
-const HAND_TILT = 1.15; // la fléchette tenue est relevée d'environ 50° : on la voit en long, comme dans Darts of Fury
+const HAND_TILT = 0.6; // la fléchette tenue est relevée d'environ 50° : on la voit en long, comme dans Darts of Fury
 const LAMP_POS = new THREE.Vector3(0, 415, 150);
 
 export function createScene(canvas) {
@@ -53,6 +54,7 @@ export function createScene(canvas) {
 
   // ---------- Fléchette en main (visée) ----------
   const hand = makeDart();
+  hand.scale.setScalar(DART_SCALE * HAND_SCALE);
   scene.add(hand);
   const aim = { active: false, x: 0, y: 0 };
   const handTarget = new THREE.Vector3();
@@ -180,6 +182,7 @@ export function createScene(canvas) {
         handPose(p.x, p.y, start, startDir);
       }
       dart.position.copy(start);
+      dart.scale.setScalar(DART_SCALE * HAND_SCALE);
       dart.quaternion.setFromUnitVectors(FORWARD, startDir);
 
       const arc = 35; // cloche légère
@@ -197,6 +200,7 @@ export function createScene(canvas) {
         const t = Math.min(1, (now - t0) / duration);
         const p = posAt(t);
         dart.position.copy(p);
+        dart.scale.setScalar(DART_SCALE * (HAND_SCALE + (1 - HAND_SCALE) * Math.min(1, t * 1.6)));
 
         const dir = posAt(Math.min(1, t + 0.02)).sub(p);
         if (dir.lengthSq() > 1e-6) {

@@ -8,7 +8,7 @@ const FOV = 40;
 const DART_SCALE = 1.4;
 const HAND_SCALE = 0.7; // la fléchette tenue est plus petite pour ne pas écraser la cible
 const HAND_DEPTH = 430; // distance caméra -> pointe de la fléchette tenue
-const HAND_TILT = 0.6; // la fléchette tenue est relevée d'environ 50° : on la voit en long, comme dans Darts of Fury
+const HAND_TILT = 0.3; // la fléchette tenue est relevée d'environ 50° : on la voit en long, comme dans Darts of Fury
 const LAMP_POS = new THREE.Vector3(0, 415, 150);
 
 export function createScene(canvas) {
@@ -569,7 +569,7 @@ function flightTexture() {
   c.width = 128;
   c.height = 256;
   const g = c.getContext('2d');
-  g.fillStyle = '#2b1163';
+  g.fillStyle = '#10143a';
   g.fillRect(0, 0, 128, 256);
 
   const tri = (color, pts) => {
@@ -580,12 +580,12 @@ function flightTexture() {
     g.closePath();
     g.fill();
   };
-  tri('#e0307c', [0, 0, 128, 0, 0, 150]);
-  tri('#2fd0e8', [128, 40, 128, 150, 30, 256]);
-  tri('#f4f1ff', [0, 120, 56, 256, 0, 256]);
-  tri('#7a2fd0', [60, 0, 128, 0, 128, 70]);
-  tri('#ffc233', [52, 200, 76, 200, 64, 232]);
-  g.strokeStyle = 'rgba(255,255,255,0.85)';
+  tri('#b3123f', [0, 0, 128, 0, 0, 150]);
+  tri('#2a6fb8', [128, 40, 128, 150, 30, 256]);
+  tri('#d9d6e6', [0, 120, 56, 256, 0, 256]);
+  tri('#3a1d7a', [60, 0, 128, 0, 128, 70]);
+  tri('#c99a2e', [52, 200, 76, 200, 64, 232]);
+  g.strokeStyle = 'rgba(235,235,245,0.7)';
   g.lineWidth = 3;
   g.beginPath();
   g.moveTo(0, 150);

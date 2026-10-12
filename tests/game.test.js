@@ -2,11 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { scoreAt, segmentPoint, ORDER } from '../src/board.js';
 import { X01Game } from '../src/game.js';
-import { swipeToHit, THROW_CONFIG } from '../src/throw.js';
+import { AIM_CONFIG, aimToHit, clampToRadius, swayAmplitude, swayAt } from '../src/throw.js';
 import { chooseTarget, aiThrow } from '../src/ai.js';
 
-const noRandom = () => 0.5; // sans effet ici : le tremblement est coupé (wobble: 0)
-const quiet = { ...THROW_CONFIG, wobble: 0 };
+const noRandom = () => 0.5; // sans effet quand jitter vaut 0
 
 test('centre et anneaux', () => {
   assert.equal(scoreAt(0, 0).score, 50);
@@ -84,23 +83,43 @@ test('X01 : double out obligatoire', () => {
   assert.equal(g3.throwDart(scoreAt(0, 134)).bust, true); // 21 - 20 = 1 : bust
 });
 
-test('lancer : vitesse idéale et swipe droit visent le centre', () => {
-  const hit = swipeToHit({ dx: 0, dy: 500, speed: THROW_CONFIG.idealSpeed }, noRandom, quiet);
-  assert.equal(hit.x, 0);
-  assert.equal(hit.y, 0);
-  assert.equal(hit.hint, '');
+test('visée : le tremblement grandit avec le temps et reste borné', () => {
+  assert.ok(swayAmplitude(0) < swayAmplitude(2));
+  assert.ok(swayAmplitude(2) < swayAmplitude(10));
+  assert.equal(swayAmplitude(10), AIM_CONFIG.swayMax);
+  const phases = [0.3, 1.1, 2.2, 0.7];
+  for (let t = 0; t < 8; t += 0.25) {
+    const s = swayAt(t, phases);
+    const a = swayAmplitude(t);
+    assert.ok(Math.abs(s.x) <= a + 1e-9 && Math.abs(s.y) <= a + 1e-9);
+  }
 });
 
-test('lancer : trop fort monte, trop mou descend, penché va de côté', () => {
-  const fast = swipeToHit({ dx: 0, dy: 500, speed: THROW_CONFIG.idealSpeed * 1.4 }, noRandom, quiet);
-  assert.ok(fast.y > 0);
-  assert.match(fast.hint, /trop fort/);
-  const slow = swipeToHit({ dx: 0, dy: 500, speed: THROW_CONFIG.idealSpeed * 0.6 }, noRandom, quiet);
-  assert.ok(slow.y < 0);
-  assert.match(slow.hint, /trop mou/);
-  const right = swipeToHit({ dx: 200, dy: 500, speed: THROW_CONFIG.idealSpeed }, noRandom, quiet);
-  assert.ok(right.x > 0);
-  assert.match(right.hint, /droite/);
+test('visée : une fléchette plus stable tremble moins', () => {
+  assert.ok(swayAmplitude(3, AIM_CONFIG, 2) < swayAmplitude(3, AIM_CONFIG, 1));
+});
+
+test('visée : sans jitter, impact = point visé + tremblement', () => {
+  const cfg = { ...AIM_CONFIG, jitter: 0 };
+  const phases = [0.5, 1.5, 2.5, 3.5];
+  const hit = aimToHit({ x: 10, y: -20 }, 1.5, phases, noRandom, cfg);
+  const s = swayAt(1.5, phases, cfg);
+  assert.ok(Math.abs(hit.x - (10 + s.x)) < 1e-9);
+  assert.ok(Math.abs(hit.y - (-20 + s.y)) < 1e-9);
+});
+
+test('visée : un doigt posé tout de suite sur le triple 20 le touche', () => {
+  const cfg = { ...AIM_CONFIG, jitter: 0, swayStart: 0, swayMax: 0 };
+  const target = segmentPoint(20, 'treble');
+  const hit = aimToHit(target, 0, [0, 0, 0, 0], noRandom, cfg);
+  assert.equal(scoreAt(hit.x, hit.y).label, 'T20');
+});
+
+test('visée : on reste dans le rayon autorisé', () => {
+  const p = clampToRadius({ x: 600, y: 0 });
+  assert.equal(Math.round(Math.hypot(p.x, p.y)), AIM_CONFIG.maxRadius);
+  const q = clampToRadius({ x: 10, y: 10 });
+  assert.deepEqual(q, { x: 10, y: 10 });
 });
 
 test('adversaire : choix de cible', () => {

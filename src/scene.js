@@ -1,30 +1,67 @@
-// Scène 3D : mur de pub, cible, fléchettes. Unités : mm.
+// Scène 3D : pub en brique, cible avec fils et relief, fléchettes métalliques. Unités : mm.
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { ORDER, RADII } from './board.js';
 
 const BOARD_RADIUS = 200; // cible + couronne des numéros
 const FOV = 40;
+const DART_SCALE = 1.4;
+const HOVER_Z = 150; // hauteur de la fléchette au-dessus de la cible pendant la visée
+const LAMP_POS = new THREE.Vector3(0, 415, 150);
 
 export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.15;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x120d0a);
+  scene.background = new THREE.Color(0x0a0605);
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environmentIntensity = 0.45;
 
-  const camera = new THREE.PerspectiveCamera(FOV, 1, 10, 5000);
+  const camera = new THREE.PerspectiveCamera(FOV, 1, 10, 6000);
 
-  // lumières
-  scene.add(new THREE.AmbientLight(0xffffff, 0.9));
-  const key = new THREE.DirectionalLight(0xfff1d6, 1.4);
-  key.position.set(150, 300, 600);
-  scene.add(key);
+  // Lumière : l'ampoule de la lampe au-dessus de la cible, plus un peu d'ambiance
+  const spot = new THREE.SpotLight(0xffe2b0, 9, 0, 0.95, 1, 0);
+  spot.position.copy(LAMP_POS);
+  spot.target.position.set(0, -30, 0);
+  spot.castShadow = true;
+  spot.shadow.mapSize.set(1024, 1024);
+  spot.shadow.camera.near = 40;
+  spot.shadow.camera.far = 1600;
+  spot.shadow.bias = -0.0004;
+  spot.shadow.normalBias = 0.6;
+  spot.shadow.radius = 3;
+  scene.add(spot, spot.target);
+  scene.add(new THREE.HemisphereLight(0xffd9a8, 0x1b0f0a, 0.35));
 
   buildWall(scene);
+  buildLamp(scene);
   buildBoard(scene);
 
   const darts = [];
+  const wobbles = [];
+  const clock = new THREE.Clock();
+
   let camDistance = 1000;
+  let camBaseY = 0;
+
+  // ---------- Fléchette en main (visée) ----------
+  const hand = makeDart();
+  scene.add(hand);
+  const aim = { active: false, x: 0, y: 0 };
+  const handTarget = new THREE.Vector3();
+  const handQuatTarget = new THREE.Quaternion();
+  const FORWARD = new THREE.Vector3(0, 0, -1);
+
+  function idlePosition() {
+    // en bas de l'écran, devant la caméra
+    return new THREE.Vector3(0, camBaseY - 105, camDistance - 420);
+  }
 
   function resize() {
     const w = window.innerWidth;
@@ -33,35 +70,103 @@ export function createScene(canvas) {
     camera.aspect = w / h;
 
     // On cadre la cible : toute la largeur en portrait, toute la hauteur en paysage.
-    const halfH = Math.max(300, 270 / camera.aspect);
+    const halfH = Math.max(310, 285 / camera.aspect);
     camDistance = halfH / Math.tan((FOV / 2) * Math.PI / 180);
-    // La cible est remontée dans l'écran pour laisser la place au swipe.
-    const lookY = -halfH * 0.22;
-    camera.position.set(0, lookY, camDistance);
-    camera.lookAt(0, lookY, 0);
+    // La cible est remontée dans l'écran pour laisser la place à la fléchette en bas.
+    camBaseY = -halfH * 0.2;
+    camera.position.set(0, camBaseY, camDistance);
+    camera.lookAt(0, camBaseY, 0);
     camera.updateProjectionMatrix();
   }
 
-  function render() {
-    renderer.render(scene, camera);
+  // Position du doigt (px) -> point sur la cible (mm)
+  const raycaster = new THREE.Raycaster();
+  const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+  function screenToBoard(px, py) {
+    const ndc = new THREE.Vector2((px / window.innerWidth) * 2 - 1, -(py / window.innerHeight) * 2 + 1);
+    camera.updateMatrixWorld();
+    raycaster.setFromCamera(ndc, camera);
+    const hit = new THREE.Vector3();
+    if (!raycaster.ray.intersectPlane(plane, hit)) return { x: 0, y: 0 };
+    return { x: hit.x, y: hit.y };
   }
 
-  // Lance une fléchette vers (hit.x, hit.y). Résolu quand elle est plantée.
-  function flyDart(hit) {
+  function setAimActive(active) {
+    aim.active = active;
+  }
+  function setAim(x, y) {
+    aim.x = x;
+    aim.y = y;
+  }
+  function showHand(visible) {
+    hand.visible = visible;
+    if (visible) {
+      hand.position.copy(idlePosition());
+      aim.active = false;
+    }
+  }
+
+  // petit réticule sur la cible : le doigt cache la fléchette, lui montre où elle pointe
+  const reticle = new THREE.Mesh(
+    new THREE.RingGeometry(8, 10, 40),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthTest: false }),
+  );
+  reticle.renderOrder = 10;
+  reticle.visible = false;
+  scene.add(reticle);
+
+  // ---------- Étincelles à l'impact ----------
+  const SPARKS = 18;
+  const sparkPos = new Float32Array(SPARKS * 3);
+  const sparkVel = new Float32Array(SPARKS * 3);
+  const sparkGeo = new THREE.BufferGeometry();
+  sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPos, 3));
+  const sparkMat = new THREE.PointsMaterial({
+    color: 0xffd27a,
+    size: 5,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const sparks = new THREE.Points(sparkGeo, sparkMat);
+  sparks.frustumCulled = false;
+  scene.add(sparks);
+  let sparkLife = 0;
+
+  function burst(x, y) {
+    for (let i = 0; i < SPARKS; i += 1) {
+      sparkPos[i * 3] = x;
+      sparkPos[i * 3 + 1] = y;
+      sparkPos[i * 3 + 2] = 6;
+      const a = Math.random() * Math.PI * 2;
+      const speed = 60 + Math.random() * 180;
+      sparkVel[i * 3] = Math.cos(a) * speed;
+      sparkVel[i * 3 + 1] = Math.sin(a) * speed + 40;
+      sparkVel[i * 3 + 2] = 40 + Math.random() * 160;
+    }
+    sparkGeo.attributes.position.needsUpdate = true;
+    sparkLife = 0.4;
+  }
+
+  // ---------- Vol d'une fléchette ----------
+  // fromHand : la fléchette part de la position de visée et pique droit vers la cible.
+  function flyDart(hit, { fromHand = false } = {}) {
     return new Promise((resolve) => {
       const dart = makeDart();
       scene.add(dart);
 
       const tilt = {
-        yaw: (Math.random() - 0.5) * 0.4,
-        pitch: 0.14 + Math.random() * 0.14,
+        yaw: (Math.random() - 0.5) * 0.35,
+        pitch: 0.12 + Math.random() * 0.14,
       };
-      // sur la cible ou sa couronne la pointe s'enfonce de 9 mm, sinon elle finit dans le mur
       const onBoard = Math.hypot(hit.x, hit.y) <= BOARD_RADIUS + 38;
       const end = new THREE.Vector3(hit.x, hit.y, onBoard ? -9 : -28);
-      const start = new THREE.Vector3(hit.x * 0.25, end.y - 420, camDistance - 260);
-      const arc = 70;
-      const duration = 380;
+      const start = fromHand ? hand.position.clone() : idlePosition();
+      if (fromHand) hand.visible = false;
+
+      const arc = fromHand ? 0 : 60;
+      const duration = fromHand ? 170 : 420;
       const t0 = performance.now();
 
       const posAt = (t) => {
@@ -69,31 +174,34 @@ export function createScene(canvas) {
         p.y += arc * 4 * t * (1 - t);
         return p;
       };
-
       const finalDir = new THREE.Vector3(Math.sin(tilt.yaw), -Math.sin(tilt.pitch), -1).normalize();
-      const forward = new THREE.Vector3(0, 0, -1);
 
       function step(now) {
         const t = Math.min(1, (now - t0) / duration);
         const p = posAt(t);
         dart.position.copy(p);
 
-        const ahead = posAt(Math.min(1, t + 0.02));
-        const dir = ahead.sub(p);
+        const dir = posAt(Math.min(1, t + 0.02)).sub(p);
         if (dir.lengthSq() > 1e-6) {
-          dir.normalize();
-          // en fin de course, on se cale sur l'angle de plantage
-          dir.lerp(finalDir, t * t).normalize();
-          dart.quaternion.setFromUnitVectors(forward, dir);
+          dir.normalize().lerp(finalDir, t * t).normalize();
+          dart.quaternion.setFromUnitVectors(FORWARD, dir);
         }
 
         if (t < 1) {
           requestAnimationFrame(step);
-        } else {
-          dart.quaternion.setFromUnitVectors(forward, finalDir);
-          darts.push(dart);
-          resolve();
+          return;
         }
+        dart.quaternion.setFromUnitVectors(FORWARD, finalDir);
+        darts.push(dart);
+        burst(hit.x, hit.y);
+        wobbles.push({
+          dart,
+          base: dart.quaternion.clone(),
+          t0: performance.now(),
+          amp: 0.1 + Math.random() * 0.06,
+          sign: Math.random() < 0.5 ? -1 : 1,
+        });
+        resolve();
       }
       requestAnimationFrame(step);
     });
@@ -102,71 +210,265 @@ export function createScene(canvas) {
   function clearDarts() {
     for (const dart of darts) scene.remove(dart);
     darts.length = 0;
+    wobbles.length = 0;
   }
 
-  let running = true;
+  // ---------- Boucle ----------
+  const tmpQ = new THREE.Quaternion();
+  const tmpE = new THREE.Euler();
+  const tmpV = new THREE.Vector3();
+
   function loop() {
-    if (!running) return;
-    render();
+    const dt = Math.min(0.05, clock.getDelta());
+    const t = clock.elapsedTime;
+
+    // légère respiration de la caméra
+    camera.position.x = Math.sin(t * 0.5) * 2.5;
+    camera.position.y = camBaseY + Math.sin(t * 0.8) * 1.5;
+    camera.lookAt(0, camBaseY, 0);
+
+    reticle.visible = hand.visible && aim.active;
+    reticle.position.set(aim.x, aim.y, 1.5);
+
+    // fléchette en main
+    if (hand.visible) {
+      if (aim.active) {
+        handTarget.set(aim.x, aim.y, HOVER_Z);
+        tmpV.set(0, -0.1, -1).normalize();
+      } else {
+        handTarget.copy(idlePosition());
+        handTarget.y += Math.sin(t * 2) * 1.5;
+        tmpV.set(0, 0, 0).sub(handTarget).normalize();
+      }
+      handQuatTarget.setFromUnitVectors(FORWARD, tmpV);
+      const k = 1 - Math.exp(-dt * (aim.active ? 30 : 12));
+      hand.position.lerp(handTarget, k);
+      hand.quaternion.slerp(handQuatTarget, k);
+    }
+
+    // fléchettes qui vibrent après l'impact
+    const now = performance.now();
+    for (let i = wobbles.length - 1; i >= 0; i -= 1) {
+      const w = wobbles[i];
+      const s = (now - w.t0) / 1000;
+      if (s > 0.9) {
+        w.dart.quaternion.copy(w.base);
+        wobbles.splice(i, 1);
+        continue;
+      }
+      const angle = w.amp * Math.exp(-s * 6) * Math.sin(s * 42) * w.sign;
+      tmpE.set(angle, angle * 0.6, 0);
+      w.dart.quaternion.copy(w.base).multiply(tmpQ.setFromEuler(tmpE));
+    }
+
+    // étincelles
+    if (sparkLife > 0) {
+      sparkLife -= dt;
+      for (let i = 0; i < SPARKS; i += 1) {
+        sparkVel[i * 3 + 1] -= 520 * dt;
+        sparkPos[i * 3] += sparkVel[i * 3] * dt;
+        sparkPos[i * 3 + 1] += sparkVel[i * 3 + 1] * dt;
+        sparkPos[i * 3 + 2] += sparkVel[i * 3 + 2] * dt;
+      }
+      sparkGeo.attributes.position.needsUpdate = true;
+      sparkMat.opacity = Math.max(0, sparkLife / 0.4);
+    } else {
+      sparkMat.opacity = 0;
+    }
+
+    renderer.render(scene, camera);
     requestAnimationFrame(loop);
   }
 
   resize();
+  showHand(true);
   window.addEventListener('resize', resize);
   loop();
 
-  return { flyDart, clearDarts, resize };
+  return { flyDart, clearDarts, resize, screenToBoard, setAim, setAimActive, showHand };
+}
+
+// ---------- Décor ----------
+
+function srgb(texture) {
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  return texture;
+}
+
+function brickTextures() {
+  const W = 512;
+  const H = 512;
+  const rows = 8;
+  const cols = 3;
+  const bw = W / cols;
+  const bh = H / rows;
+  const color = document.createElement('canvas');
+  const bump = document.createElement('canvas');
+  color.width = bump.width = W;
+  color.height = bump.height = H;
+  const c = color.getContext('2d');
+  const b = bump.getContext('2d');
+  c.fillStyle = '#2b1b15'; // joints
+  c.fillRect(0, 0, W, H);
+  b.fillStyle = '#000';
+  b.fillRect(0, 0, W, H);
+
+  for (let r = 0; r < rows; r += 1) {
+    const offset = r % 2 ? bw / 2 : 0;
+    for (let col = -1; col <= cols; col += 1) {
+      const x = col * bw + offset;
+      const y = r * bh;
+      const hue = 10 + Math.random() * 12;
+      const sat = 32 + Math.random() * 18;
+      const light = 24 + Math.random() * 12;
+      c.fillStyle = `hsl(${hue} ${sat}% ${light}%)`;
+      c.fillRect(x + 3, y + 3, bw - 6, bh - 6);
+      b.fillStyle = `hsl(0 0% ${60 + Math.random() * 30}%)`;
+      b.fillRect(x + 3, y + 3, bw - 6, bh - 6);
+    }
+  }
+  for (let i = 0; i < 500; i += 1) {
+    c.fillStyle = `rgba(0,0,0,${Math.random() * 0.18})`;
+    c.fillRect(Math.random() * W, Math.random() * H, 2 + Math.random() * 6, 2 + Math.random() * 4);
+  }
+  return { color, bump };
 }
 
 function buildWall(scene) {
-  const size = 512;
+  const { color, bump } = brickTextures();
+  const map = srgb(new THREE.CanvasTexture(color));
+  const bumpMap = new THREE.CanvasTexture(bump);
+  for (const tex of [map, bumpMap]) {
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(7, 7);
+  }
+  const wall = new THREE.Mesh(
+    new THREE.PlaneGeometry(3200, 3200),
+    new THREE.MeshStandardMaterial({ map, bumpMap, bumpScale: 3, roughness: 0.95, metalness: 0 }),
+  );
+  wall.position.z = -42;
+  wall.receiveShadow = true;
+  scene.add(wall);
+
+  // fond en bois derrière la cible, comme un caisson
+  const backboard = new THREE.Mesh(
+    new THREE.BoxGeometry(560, 560, 24),
+    new THREE.MeshStandardMaterial({ color: 0x3a2517, roughness: 0.75 }),
+  );
+  backboard.position.set(0, 0, -30);
+  backboard.castShadow = true;
+  backboard.receiveShadow = true;
+  scene.add(backboard);
+}
+
+function buildLamp(scene) {
+  const brass = new THREE.MeshStandardMaterial({ color: 0x9a7a35, metalness: 1, roughness: 0.35 });
+  const enamel = new THREE.MeshStandardMaterial({
+    color: 0x1f5a45,
+    metalness: 0.3,
+    roughness: 0.4,
+    side: THREE.DoubleSide,
+  });
+
+  // bras fixé au mur
+  const arm = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, LAMP_POS.z + 42, 12), brass);
+  arm.rotation.x = Math.PI / 2;
+  arm.position.set(0, LAMP_POS.y + 12, (LAMP_POS.z - 42) / 2);
+  scene.add(arm);
+
+  // abat-jour
+  const profile = [[6, 16], [10, 12], [38, -4], [70, -34], [73, -38], [70, -38]].map(
+    ([r, y]) => new THREE.Vector2(r, y),
+  );
+  const shade = new THREE.Mesh(new THREE.LatheGeometry(profile, 32), enamel);
+  shade.position.copy(LAMP_POS);
+  scene.add(shade);
+
+  // ampoule
+  const bulb = new THREE.Mesh(
+    new THREE.SphereGeometry(13, 16, 12),
+    new THREE.MeshBasicMaterial({ color: 0xfff2cf }),
+  );
+  bulb.position.set(LAMP_POS.x, LAMP_POS.y - 18, LAMP_POS.z);
+  scene.add(bulb);
+}
+
+function sisalBump(size) {
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const g = c.getContext('2d');
-  const grad = g.createRadialGradient(size / 2, size / 2, 20, size / 2, size / 2, size * 0.75);
-  grad.addColorStop(0, '#5a3a24');
-  grad.addColorStop(0.55, '#34201a');
-  grad.addColorStop(1, '#150d0a');
-  g.fillStyle = grad;
+  g.fillStyle = '#808080';
   g.fillRect(0, 0, size, size);
-  // lattes de bois
-  g.strokeStyle = 'rgba(0,0,0,0.25)';
-  g.lineWidth = 2;
-  for (let x = 32; x <= size; x += 64) {
+  for (let i = 0; i < 9000; i += 1) {
+    const v = 90 + Math.random() * 110;
+    g.strokeStyle = `rgba(${v},${v},${v},0.5)`;
+    g.lineWidth = 1 + Math.random() * 1.5;
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const a = Math.random() * Math.PI;
     g.beginPath();
-    g.moveTo(x, 0);
-    g.lineTo(x, size);
+    g.moveTo(x, y);
+    g.lineTo(x + Math.cos(a) * 14, y + Math.sin(a) * 14);
     g.stroke();
   }
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-
-  const wall = new THREE.Mesh(
-    new THREE.PlaneGeometry(2600, 2600),
-    new THREE.MeshBasicMaterial({ map: tex }),
-  );
-  wall.position.z = -30;
-  scene.add(wall);
+  return c;
 }
 
 function buildBoard(scene) {
-  const tex = new THREE.CanvasTexture(drawBoardTexture(2048));
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  const faceTex = srgb(new THREE.CanvasTexture(drawBoardTexture(2048)));
+  const bumpMap = new THREE.CanvasTexture(sisalBump(1024));
 
-  // couronne en caoutchouc autour de la cible
-  const surround = new THREE.Mesh(
-    new THREE.RingGeometry(BOARD_RADIUS - 2, BOARD_RADIUS + 38, 96),
-    new THREE.MeshBasicMaterial({ color: 0x1a1210 }),
+  const face = new THREE.Mesh(
+    new THREE.CircleGeometry(BOARD_RADIUS, 128),
+    new THREE.MeshStandardMaterial({ map: faceTex, bumpMap, bumpScale: 1.6, roughness: 0.92, metalness: 0 }),
   );
-  surround.position.z = -2;
+  face.receiveShadow = true;
+  scene.add(face);
+
+  // épaisseur de la cible
+  const bodyGeo = new THREE.CylinderGeometry(BOARD_RADIUS, BOARD_RADIUS, 40, 96);
+  bodyGeo.rotateX(Math.PI / 2);
+  const body = new THREE.Mesh(bodyGeo, new THREE.MeshStandardMaterial({ color: 0x20140e, roughness: 0.9 }));
+  body.position.z = -20.5;
+  scene.add(body);
+
+  // couronne en caoutchouc, avec un vrai profil en relief
+  const profile = [[197, -6], [199, 3], [205, 11], [221, 15], [235, 9], [240, -6]].map(
+    ([r, y]) => new THREE.Vector2(r, y),
+  );
+  const surroundGeo = new THREE.LatheGeometry(profile, 128);
+  surroundGeo.rotateX(Math.PI / 2);
+  const surround = new THREE.Mesh(
+    surroundGeo,
+    new THREE.MeshStandardMaterial({ color: 0x15100e, roughness: 0.65, metalness: 0.05, side: THREE.DoubleSide }),
+  );
+  surround.castShadow = true;
+  surround.receiveShadow = true;
   scene.add(surround);
 
-  const board = new THREE.Mesh(
-    new THREE.CircleGeometry(BOARD_RADIUS, 128),
-    new THREE.MeshBasicMaterial({ map: tex }),
-  );
-  scene.add(board);
+  // fils métalliques en relief
+  const wireMat = new THREE.MeshStandardMaterial({ color: 0xd8d8d8, metalness: 1, roughness: 0.28 });
+  for (const r of [RADII.outerBull, RADII.trebleIn, RADII.trebleOut, RADII.doubleIn, RADII.doubleOut]) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.5, 6, 180), wireMat);
+    ring.position.z = 0.7;
+    ring.castShadow = true;
+    scene.add(ring);
+  }
+  const wireLen = RADII.doubleOut - RADII.outerBull;
+  const wireMid = (RADII.doubleOut + RADII.outerBull) / 2;
+  const wireGeo = new THREE.BoxGeometry(0.8, wireLen, 1.4);
+  for (let i = 0; i < 20; i += 1) {
+    const a = i * (Math.PI / 10) - Math.PI / 20;
+    const wire = new THREE.Mesh(wireGeo, wireMat);
+    wire.position.set(Math.sin(a) * wireMid, Math.cos(a) * wireMid, 0.7);
+    wire.rotation.z = -a;
+    wire.castShadow = true;
+    scene.add(wire);
+  }
+  const bullRing = new THREE.Mesh(new THREE.TorusGeometry(RADII.bull, 0.5, 6, 48), wireMat);
+  bullRing.position.z = 0.7;
+  scene.add(bullRing);
 }
 
 // Dessine la cible dans un canvas carré qui couvre [-200 ; 200] mm.
@@ -182,14 +484,13 @@ function drawBoardTexture(size) {
   g.fillStyle = '#0b0b0b';
   g.fillRect(0, 0, size, size);
 
-  const BLACK = '#161616';
-  const CREAM = '#efe3bd';
-  const RED = '#c4262e';
-  const GREEN = '#1f8a4c';
+  const BLACK = '#171513';
+  const CREAM = '#e9dcb4';
+  const RED = '#b8242b';
+  const GREEN = '#1d7f49';
 
   // un secteur : de rIn à rOut, centré sur l'angle theta (0 = haut, sens horaire)
   function wedge(rIn, rOut, index, color) {
-    // en canvas, 0 rad = droite ; on décale de -90° pour partir du haut
     const a0 = index * sector - sector / 2 - Math.PI / 2;
     const a1 = a0 + sector;
     g.beginPath();
@@ -210,7 +511,6 @@ function drawBoardTexture(size) {
     wedge(RADII.doubleIn, RADII.doubleOut, i, ring);
   }
 
-  // bull
   g.beginPath();
   g.arc(cx, cy, RADII.outerBull * k, 0, Math.PI * 2);
   g.fillStyle = GREEN;
@@ -219,22 +519,6 @@ function drawBoardTexture(size) {
   g.arc(cx, cy, RADII.bull * k, 0, Math.PI * 2);
   g.fillStyle = RED;
   g.fill();
-
-  // fils métalliques
-  g.strokeStyle = 'rgba(200,200,200,0.55)';
-  g.lineWidth = Math.max(1, 0.7 * k);
-  for (const r of [RADII.bull, RADII.outerBull, RADII.trebleIn, RADII.trebleOut, RADII.doubleIn, RADII.doubleOut]) {
-    g.beginPath();
-    g.arc(cx, cy, r * k, 0, Math.PI * 2);
-    g.stroke();
-  }
-  for (let i = 0; i < 20; i += 1) {
-    const a = i * sector - sector / 2 - Math.PI / 2;
-    g.beginPath();
-    g.moveTo(cx + Math.cos(a) * RADII.outerBull * k, cy + Math.sin(a) * RADII.outerBull * k);
-    g.lineTo(cx + Math.cos(a) * RADII.doubleOut * k, cy + Math.sin(a) * RADII.doubleOut * k);
-    g.stroke();
-  }
 
   // numéros
   g.fillStyle = '#f4f4f4';
@@ -250,47 +534,117 @@ function drawBoardTexture(size) {
   return c;
 }
 
-// Fléchette : la pointe est à l'origine et regarde vers -Z.
+// ---------- Fléchette ----------
+// La pointe est à l'origine et regarde vers -Z. Pièces partagées entre toutes les fléchettes.
+
+let dartParts = null;
+
+function lathe(points, segments = 20) {
+  return new THREE.LatheGeometry(points.map(([r, y]) => new THREE.Vector2(r, y)), segments);
+}
+
+function flightTexture() {
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 256;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, '#e23b32');
+  grad.addColorStop(1, '#8d1a1c');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 128, 256);
+  g.fillStyle = '#16100e';
+  g.fillRect(0, 0, 18, 256); // bande côté axe
+  g.fillStyle = '#ffd23f';
+  g.beginPath();
+  g.moveTo(78, 40);
+  g.lineTo(46, 130);
+  g.lineTo(70, 130);
+  g.lineTo(52, 220);
+  g.lineTo(104, 112);
+  g.lineTo(78, 112);
+  g.lineTo(100, 40);
+  g.closePath();
+  g.fill();
+  return srgb(new THREE.CanvasTexture(c));
+}
+
+function getDartParts() {
+  if (dartParts) return dartParts;
+
+  const tip = lathe([[2.1, -28], [1.6, -20], [1.1, -10], [0.5, -2], [0, 0]], 14);
+
+  const bp = [[2.0, -27], [3.1, -30]];
+  for (let y = -30; y > -69; y -= 2.4) {
+    bp.push([3.5, y], [3.5, y - 0.9], [3.0, y - 1.1], [3.0, y - 1.9]);
+  }
+  bp.push([3.3, -71], [2.3, -76]);
+  bp.reverse(); // y croissant
+  const barrel = lathe(bp, 24);
+
+  const shaft = lathe(
+    [[2.2, -112], [2.2, -104], [1.8, -103], [1.8, -100], [2.2, -99], [2.2, -90], [1.8, -89], [1.8, -86], [2.2, -85], [2.2, -76]],
+    16,
+  );
+
+  // un aileron : x = distance à l'axe, y = position le long de l'axe
+  const shape = new THREE.Shape();
+  shape.moveTo(0, -104);
+  shape.lineTo(6, -105);
+  shape.lineTo(20, -126);
+  shape.lineTo(21, -146);
+  shape.lineTo(0, -146);
+  shape.closePath();
+  const flight = new THREE.ShapeGeometry(shape);
+  const pos = flight.attributes.position;
+  const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i += 1) {
+    uv[i * 2] = pos.getX(i) / 21;
+    uv[i * 2 + 1] = (pos.getY(i) + 146) / 42;
+  }
+  flight.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+
+  dartParts = {
+    tip,
+    barrel,
+    shaft,
+    flight,
+    steel: new THREE.MeshStandardMaterial({ color: 0xdde0e5, metalness: 1, roughness: 0.2 }),
+    tungsten: new THREE.MeshStandardMaterial({ color: 0x8a909a, metalness: 1, roughness: 0.3, side: THREE.DoubleSide }),
+    anodized: new THREE.MeshStandardMaterial({ color: 0x2f6fd8, metalness: 0.85, roughness: 0.35, side: THREE.DoubleSide }),
+    flightMat: new THREE.MeshStandardMaterial({
+      map: flightTexture(),
+      side: THREE.DoubleSide,
+      roughness: 0.65,
+      metalness: 0,
+    }),
+  };
+  return dartParts;
+}
+
 function makeDart() {
+  const parts = getDartParts();
   const dart = new THREE.Group();
   const inner = new THREE.Group();
   inner.rotation.x = -Math.PI / 2; // +Y (pointe) -> -Z
   dart.add(inner);
 
-  const metal = new THREE.MeshStandardMaterial({ color: 0xc9ccd1, metalness: 0.85, roughness: 0.3 });
-  const barrelMat = new THREE.MeshStandardMaterial({ color: 0xb8892b, metalness: 0.8, roughness: 0.35 });
-  const shaftMat = new THREE.MeshStandardMaterial({ color: 0x23262b, metalness: 0.2, roughness: 0.6 });
-  const flightMat = new THREE.MeshBasicMaterial({ color: 0xd9352b, side: THREE.DoubleSide });
+  const meshes = [
+    new THREE.Mesh(parts.tip, parts.steel),
+    new THREE.Mesh(parts.barrel, parts.tungsten),
+    new THREE.Mesh(parts.shaft, parts.anodized),
+  ];
+  const roll = Math.random() * Math.PI * 2; // chaque fléchette tourne un peu sur elle-même
+  for (let i = 0; i < 3; i += 1) {
+    const f = new THREE.Mesh(parts.flight, parts.flightMat);
+    f.rotation.y = roll + (i * Math.PI * 2) / 3;
+    meshes.push(f);
+  }
+  for (const m of meshes) {
+    m.castShadow = true;
+    inner.add(m);
+  }
 
-  // le cône pointe vers +Y : centré en y = -14, sa pointe est donc en y = 0
-  const tip = new THREE.Mesh(new THREE.ConeGeometry(2.4, 28, 12), metal);
-  tip.position.y = -14;
-  inner.add(tip);
-
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(3.6, 3.6, 46, 16), barrelMat);
-  barrel.position.y = -28 - 23;
-  inner.add(barrel);
-
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(2.3, 2.3, 38, 12), shaftMat);
-  shaft.position.y = -74 - 19;
-  inner.add(shaft);
-
-  const shape = new THREE.Shape();
-  shape.moveTo(0, -106);
-  shape.lineTo(13, -114);
-  shape.lineTo(17, -140);
-  shape.lineTo(0, -142);
-  shape.lineTo(-17, -140);
-  shape.lineTo(-13, -114);
-  shape.closePath();
-  const flightGeo = new THREE.ShapeGeometry(shape);
-  const flightA = new THREE.Mesh(flightGeo, flightMat);
-  const flightB = new THREE.Mesh(flightGeo, flightMat);
-  const roll = Math.random() * Math.PI; // chaque fléchette tourne un peu sur elle-même
-  flightA.rotation.y = roll;
-  flightB.rotation.y = roll + Math.PI / 2;
-  inner.add(flightA, flightB);
-
-  dart.scale.setScalar(1.7);
+  dart.scale.setScalar(DART_SCALE);
   return dart;
 }

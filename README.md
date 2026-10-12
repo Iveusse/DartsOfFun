@@ -5,7 +5,8 @@ Pas de jetons, pas d'achat : tout se gagne en jouant.
 
 ## Où on en est (étape 1)
 
-- Cible 3D (Three.js), lancer au swipe vers le haut
+- Pub en briques, cible en relief avec fils métalliques, fléchettes 3D avec ombres (Three.js)
+- Contrôle comme Darts of Fury : on pose le doigt, on fait glisser la fléchette sur la cible, on relâche pour lancer (la main tremble de plus en plus si on attend)
 - Match en 201 contre Gérard, 3 fléchettes par volée, bust géré
 - Sortie libre par défaut (le double out est prêt dans le code, à activer dans `src/main.js`)
 - Phrases d'ambiance dans `src/jokes.js`
@@ -26,18 +27,17 @@ npm test         # tests de la logique
 npm run build    # version à déployer (dossier dist)
 ```
 
-## Régler le feeling du lancer
+## Régler le feeling de la visée
 
-Tout est dans `src/throw.js` (`THROW_CONFIG`) :
+Tout est dans `src/throw.js` (`AIM_CONFIG`) :
 
 | Réglage | Effet |
 | --- | --- |
-| `idealSpeed` | vitesse de swipe qui vise le centre (plus haut = il faut swiper plus vite) |
-| `speedSensitivity` | à quel point la vitesse décale le tir en hauteur |
-| `angleSensitivity` | à quel point l'inclinaison du swipe décale le tir sur le côté |
-| `wobble` | tremblement aléatoire en mm |
+| `fingerOffsetPx` | décalage de la fléchette au-dessus du doigt, pour la voir |
+| `swayStart` / `swayMax` | tremblement de la main (mm) au début et au maximum |
+| `swayRamp` | temps (s) pour passer du tremblement minimum au maximum |
+| `jitter` | petite imprécision aléatoire au lâcher (mm) |
 
-Après chaque lancer, l'écran affiche "trop fort", "trop mou", "trop à droite"... pour aider au réglage.
 La difficulté de Gérard se règle avec `opponentSigma` dans `src/main.js`.
 
 ## Publier sur GitHub Pages

@@ -1,19 +1,18 @@
-// Transforme un swipe en point d'impact sur la cible (mm).
-// Tous les réglages de "feeling" sont ici, à ajuster après essai sur téléphone.
+// Visée : on fait glisser la fléchette au bon endroit, on relâche pour lancer.
+// La main tremble de plus en plus quand on garde le doigt posé, il faut viser vite et propre.
+// Tous les réglages de "feeling" sont ici.
 
-export const THROW_CONFIG = {
-  // Vitesse de swipe "idéale" en hauteurs d'écran par seconde (centre de la cible).
-  idealSpeed: 2.2,
-  // mm de décalage vertical par unité d'écart de vitesse (1.0 = 100 % trop fort).
-  speedSensitivity: 140,
-  // mm de décalage horizontal par unité de rapport dx/dy du swipe.
-  angleSensitivity: 230,
-  // Tremblement de base (écart-type en mm).
-  wobble: 5,
-  // Swipe minimal pour compter comme un lancer (fraction de la hauteur d'écran).
-  minSwipe: 0.08,
-  // Zone de tolérance pour le message d'aide (mm).
-  hintThreshold: 28,
+export const AIM_CONFIG = {
+  // Décalage de la fléchette au-dessus du doigt, pour qu'il ne la cache pas (px).
+  fingerOffsetPx: 100,
+  // Tremblement de la main (mm) : part de swayStart et monte jusqu'à swayMax en swayRamp secondes.
+  swayStart: 2.5,
+  swayMax: 11,
+  swayRamp: 4,
+  // Petite imprécision aléatoire au moment du lâcher (écart-type en mm).
+  jitter: 1.5,
+  // Rayon max de visée (mm), pour rester dans l'image.
+  maxRadius: 255,
 };
 
 export function gaussian(rng = Math.random) {
@@ -23,29 +22,37 @@ export function gaussian(rng = Math.random) {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
-// swipe : { dx, dy (px, dy > 0 = vers le haut), speed (hauteurs d'écran / s) }
-export function swipeToHit(swipe, rng = Math.random, cfg = THROW_CONFIG) {
-  const ratio = swipe.dy > 0 ? swipe.dx / swipe.dy : 0;
-  const speedRatio = swipe.speed / cfg.idealSpeed;
-
-  const cleanX = clamp(ratio * cfg.angleSensitivity, -260, 260);
-  const cleanY = clamp((speedRatio - 1) * cfg.speedSensitivity, -260, 260);
-
-  const x = cleanX + gaussian(rng) * cfg.wobble;
-  const y = cleanY + gaussian(rng) * cfg.wobble;
-
-  return { x, y, hint: hintFor(cleanX, cleanY, cfg.hintThreshold) };
+export function newPhases(rng = Math.random) {
+  return [0, 1, 2, 3].map(() => rng() * Math.PI * 2);
 }
 
-function hintFor(x, y, threshold) {
-  const parts = [];
-  if (y > threshold) parts.push('trop fort');
-  else if (y < -threshold) parts.push('trop mou');
-  if (x > threshold) parts.push('trop à droite');
-  else if (x < -threshold) parts.push('trop à gauche');
-  return parts.join(', ');
+// Amplitude du tremblement après `held` secondes. `stability` > 1 = fléchette plus stable.
+export function swayAmplitude(held, cfg = AIM_CONFIG, stability = 1) {
+  const k = Math.min(1, Math.max(0, held / cfg.swayRamp));
+  return (cfg.swayStart + (cfg.swayMax - cfg.swayStart) * k) / stability;
 }
 
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
+// Décalage de la main (mm) au temps `held`, deux oscillations mélangées pour que ça ne soit pas régulier.
+export function swayAt(held, phases, cfg = AIM_CONFIG, stability = 1) {
+  const a = swayAmplitude(held, cfg, stability);
+  return {
+    x: a * (0.7 * Math.sin(held * 1.9 + phases[0]) + 0.3 * Math.sin(held * 4.1 + phases[1])),
+    y: a * (0.7 * Math.cos(held * 1.5 + phases[2]) + 0.3 * Math.sin(held * 3.3 + phases[3])),
+  };
+}
+
+// Point visé par le doigt -> point d'impact réel.
+export function aimToHit(aim, held, phases, rng = Math.random, cfg = AIM_CONFIG, stability = 1) {
+  const s = swayAt(held, phases, cfg, stability);
+  return {
+    x: aim.x + s.x + gaussian(rng) * cfg.jitter,
+    y: aim.y + s.y + gaussian(rng) * cfg.jitter,
+  };
+}
+
+export function clampToRadius(point, maxRadius = AIM_CONFIG.maxRadius) {
+  const r = Math.hypot(point.x, point.y);
+  if (r <= maxRadius) return point;
+  const k = maxRadius / r;
+  return { x: point.x * k, y: point.y * k };
 }

@@ -1,7 +1,7 @@
 import { createScene } from './scene.js';
 import { scoreAt } from './board.js';
 import { X01Game } from './game.js';
-import { swipeToHit, THROW_CONFIG } from './throw.js';
+import { AIM_CONFIG, aimToHit, clampToRadius, newPhases, swayAt } from './throw.js';
 import { aiThrow } from './ai.js';
 import { calloutFor } from './jokes.js';
 
@@ -17,98 +17,65 @@ const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const glCanvas = $('gl');
-const trailCanvas = $('trail');
 const scene = createScene(glCanvas);
 
-// ---------- Saisie du swipe ----------
+// ---------- Visée : on fait glisser la fléchette, on relâche pour lancer ----------
 
 let waiting = null; // resolve() de la promesse en attente d'un lancer
-let dragging = false;
-let points = [];
+let aiming = null; // { t0, phases, fx, fy, point }
 
-const trailCtx = trailCanvas.getContext('2d');
-
-function resizeTrail() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  trailCanvas.width = window.innerWidth * dpr;
-  trailCanvas.height = window.innerHeight * dpr;
-  trailCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-}
-resizeTrail();
-window.addEventListener('resize', resizeTrail);
-
-function drawTrail() {
-  trailCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-  if (points.length < 2) return;
-  trailCtx.lineCap = 'round';
-  trailCtx.lineJoin = 'round';
-  trailCtx.strokeStyle = 'rgba(242, 193, 78, 0.85)';
-  trailCtx.lineWidth = 6;
-  trailCtx.beginPath();
-  trailCtx.moveTo(points[0].x, points[0].y);
-  for (const p of points) trailCtx.lineTo(p.x, p.y);
-  trailCtx.stroke();
+function currentAim() {
+  const held = (performance.now() - aiming.t0) / 1000;
+  const board = clampToRadius(scene.screenToBoard(aiming.fx, aiming.fy - AIM_CONFIG.fingerOffsetPx));
+  const sway = swayAt(held, aiming.phases);
+  return { held, board, shown: { x: board.x + sway.x, y: board.y + sway.y } };
 }
 
-function analyseSwipe(pts) {
-  if (pts.length < 2) return null;
-  const first = pts[0];
-  const last = pts[pts.length - 1];
-  const height = window.innerHeight;
-  const dy = first.y - last.y; // positif = vers le haut
-  const dx = last.x - first.x;
-  if (dy < THROW_CONFIG.minSwipe * height) return null;
-
-  // vitesse sur les ~120 dernières ms, plus fidèle au geste final
-  let ref = first;
-  for (const p of pts) {
-    if (p.t >= last.t - 120) {
-      ref = p;
-      break;
-    }
-  }
-  let dt = last.t - ref.t;
-  if (dt < 20) {
-    ref = first;
-    dt = Math.max(20, last.t - first.t);
-  }
-  const speed = Math.max(0.1, ((ref.y - last.y) / dt) * 1000 / height);
-  return { dx, dy, speed };
+function aimTick() {
+  if (!aiming) return;
+  const { shown } = currentAim();
+  scene.setAim(shown.x, shown.y);
+  requestAnimationFrame(aimTick);
 }
 
 glCanvas.addEventListener('pointerdown', (e) => {
-  if (!waiting) return;
-  dragging = true;
-  points = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
+  if (!waiting || aiming) return;
   glCanvas.setPointerCapture(e.pointerId);
+  aiming = {
+    t0: performance.now(),
+    phases: newPhases(),
+    fx: e.clientX,
+    fy: e.clientY,
+  };
+  setHint('');
+  scene.setAimActive(true);
+  aimTick();
 });
 
 glCanvas.addEventListener('pointermove', (e) => {
-  if (!dragging) return;
-  points.push({ x: e.clientX, y: e.clientY, t: performance.now() });
-  drawTrail();
+  if (!aiming) return;
+  aiming.fx = e.clientX;
+  aiming.fy = e.clientY;
 });
 
-function endDrag(e, cancelled) {
-  if (!dragging) return;
-  dragging = false;
-  if (!cancelled) points.push({ x: e.clientX, y: e.clientY, t: performance.now() });
-  const swipe = cancelled ? null : analyseSwipe(points);
-  points = [];
-  drawTrail();
+function release(cancelled) {
+  if (!aiming) return;
+  const { held, board } = currentAim();
+  const phases = aiming.phases;
+  aiming = null;
 
-  if (swipe && waiting) {
-    const resolve = waiting;
-    waiting = null;
-    resolve(swipe);
-  } else if (!cancelled) {
-    setHint('Swipe plus franc, vers le haut');
+  if (cancelled || !waiting) {
+    scene.setAimActive(false);
+    return;
   }
+  const resolve = waiting;
+  waiting = null;
+  resolve(aimToHit(board, held, phases));
 }
-glCanvas.addEventListener('pointerup', (e) => endDrag(e, false));
-glCanvas.addEventListener('pointercancel', (e) => endDrag(e, true));
+glCanvas.addEventListener('pointerup', () => release(false));
+glCanvas.addEventListener('pointercancel', () => release(true));
 
-function awaitSwipe() {
+function awaitThrow() {
   return new Promise((resolve) => {
     waiting = resolve;
   });
@@ -169,22 +136,21 @@ async function playMatch() {
     while (!turnOver) {
       let pos;
       if (human) {
-        const swipe = await awaitSwipe();
-        pos = swipeToHit(swipe);
-        setHint(pos.hint ? `Ton lancer : ${pos.hint}` : '');
+        scene.showHand(true);
+        pos = await awaitThrow();
+        await scene.flyDart(pos, { fromHand: true });
       } else {
-        setHint('');
+        scene.showHand(false);
         await sleep(800);
         pos = aiThrow({
           remaining: game.scores[player],
           doubleOut: game.doubleOut,
           sigma: MATCH.opponentSigma,
         });
+        await scene.flyDart(pos);
       }
 
       const hit = scoreAt(pos.x, pos.y);
-      await scene.flyDart(pos);
-
       const event = game.throwDart(hit);
       renderScores();
       renderDots();
@@ -201,6 +167,7 @@ async function playMatch() {
     setHint('');
   }
 
+  scene.showHand(false);
   renderScores();
   $('help').classList.add('hidden');
   const won = game.winner === 0;

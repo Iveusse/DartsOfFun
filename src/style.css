@@ -1,10 +1,11 @@
 :root {
-  --bg: #120d0a;
-  --card: rgba(20, 14, 10, 0.78);
-  --gold: #f2c14e;
-  --text: #f6efe2;
-  --muted: #b9a998;
-  --red: #e0453a;
+  --bg: #03050c;
+  --card: rgba(8, 12, 30, 0.72);
+  --gold: #ffd24a;
+  --text: #f2f6ff;
+  --muted: #8fa3d0;
+  --pink: #ff2f8f;
+  --cyan: #2fc4ff;
 }
 
 * {
@@ -37,7 +38,7 @@ body {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(ellipse at 50% 38%, transparent 50%, rgba(0, 0, 0, 0.6) 100%);
+  background: radial-gradient(ellipse at 50% 38%, transparent 50%, rgba(0, 0, 0, 0.7) 100%);
 }
 
 #gl {
@@ -62,13 +63,14 @@ body {
   padding: 8px 14px;
   background: var(--card);
   border: 2px solid transparent;
-  border-radius: 14px;
+  border-bottom-width: 3px;
+  border-radius: 10px;
   backdrop-filter: blur(6px);
   transition: border-color 0.2s, transform 0.2s;
 }
 
 .card.active {
-  border-color: var(--gold);
+  border-color: currentColor;
   transform: scale(1.02);
 }
 
@@ -165,7 +167,7 @@ body {
   width: min(380px, 100%);
   padding: 28px 24px;
   text-align: center;
-  background: #21160f;
+  background: #0a1030;
   border: 2px solid var(--gold);
   border-radius: 20px;
 }
@@ -193,4 +195,33 @@ button {
 
 button:active {
   transform: scale(0.97);
+}
+
+#card-0 { color: var(--pink); }
+#card-1 { color: var(--cyan); }
+.card .name { color: var(--muted); }
+.card .score { color: currentColor; text-shadow: 0 0 14px currentColor; }
+
+#pop {
+  position: fixed;
+  transform: translate(-50%, -50%);
+  font-size: 3.4rem;
+  font-weight: 900;
+  font-style: italic;
+  color: var(--pink);
+  text-shadow: 0 0 18px rgba(255, 47, 143, 0.7), 0 3px 0 rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+#pop.show {
+  animation: pop 1.3s ease-out forwards;
+}
+
+@keyframes pop {
+  0% { opacity: 0; transform: translate(-50%, -30%) scale(0.5); }
+  15% { opacity: 1; transform: translate(-50%, -60%) scale(1.15); }
+  70% { opacity: 1; transform: translate(-50%, -80%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -110%) scale(1); }
 }

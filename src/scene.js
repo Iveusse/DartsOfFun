@@ -1,4 +1,4 @@
-// Scène 3D : pub en brique, cible avec fils et relief, fléchettes métalliques. Unités : mm.
+// Scène 3D : arène néon, cible lumineuse, tours de cubes, fléchettes métalliques. Unités : mm.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { ORDER, RADII } from './board.js';
@@ -9,7 +9,6 @@ const DART_SCALE = 1.4;
 const HAND_SCALE = 0.7; // la fléchette tenue est plus petite pour ne pas écraser la cible
 const HAND_DEPTH = 430; // distance caméra -> pointe de la fléchette tenue
 const HAND_TILT = 0.3; // la fléchette tenue est relevée d'environ 50° : on la voit en long, comme dans Darts of Fury
-const LAMP_POS = new THREE.Vector3(0, 415, 150);
 
 export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -20,17 +19,17 @@ export function createScene(canvas) {
   renderer.toneMappingExposure = 1.15;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0a0605);
+  scene.background = new THREE.Color(0x03050c);
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  scene.environmentIntensity = 0.45;
+  scene.environmentIntensity = 0.3;
 
   const camera = new THREE.PerspectiveCamera(FOV, 1, 10, 6000);
 
-  // Lumière : l'ampoule de la lampe au-dessus de la cible, plus un peu d'ambiance
-  const spot = new THREE.SpotLight(0xffe2b0, 9, 0, 0.95, 1, 0);
-  spot.position.copy(LAMP_POS);
-  spot.target.position.set(0, -30, 0);
+  // Lumière : un projecteur froid devant la cible (pour les ombres des fléchettes), le reste est néon
+  const spot = new THREE.SpotLight(0xcfe0ff, 7, 0, 0.9, 1, 0);
+  spot.position.set(0, 300, 420);
+  spot.target.position.set(0, -60, 0);
   spot.castShadow = true;
   spot.shadow.mapSize.set(1024, 1024);
   spot.shadow.camera.near = 40;
@@ -39,11 +38,13 @@ export function createScene(canvas) {
   spot.shadow.normalBias = 0.6;
   spot.shadow.radius = 3;
   scene.add(spot, spot.target);
-  scene.add(new THREE.HemisphereLight(0xffd9a8, 0x1b0f0a, 0.35));
+  scene.add(new THREE.HemisphereLight(0x7fa6ff, 0x0a0f24, 0.55));
 
-  buildWall(scene);
-  buildLamp(scene);
-  buildBoard(scene);
+  buildArena(scene);
+  const { faceMat } = buildBoard(scene);
+  const towers = buildTowers(scene);
+  let dim = 0;
+  let dimTarget = 0;
 
   const darts = [];
   const wobbles = [];
@@ -297,6 +298,11 @@ export function createScene(canvas) {
       sparkMat.opacity = 0;
     }
 
+    // la cible s'assombrit pendant le vol, puis se rallume
+    dim += (dimTarget - dim) * (1 - Math.exp(-dt * 8));
+    faceMat.emissiveIntensity = 1 - 0.78 * dim;
+    towers.update(dt);
+
     renderer.render(scene, camera);
     requestAnimationFrame(loop);
   }
@@ -306,7 +312,18 @@ export function createScene(canvas) {
   window.addEventListener('resize', resize);
   loop();
 
-  return { flyDart, clearDarts, resize, screenToBoard, setAim, setAimActive, showHand };
+  function setScores(fractions, burst = true) {
+    towers.set(fractions, burst);
+  }
+  function setBoardDim(on) {
+    dimTarget = on ? 1 : 0;
+  }
+  function boardToScreen(x, y) {
+    const v = new THREE.Vector3(x, y, 0).project(camera);
+    return { x: ((v.x + 1) / 2) * window.innerWidth, y: ((1 - v.y) / 2) * window.innerHeight };
+  }
+
+  return { flyDart, clearDarts, resize, screenToBoard, setAim, setAimActive, showHand, setScores, setBoardDim, boardToScreen };
 }
 
 // ---------- Décor ----------
@@ -317,242 +334,318 @@ function srgb(texture) {
   return texture;
 }
 
-function brickTextures() {
-  const W = 512;
-  const H = 512;
-  const rows = 8;
-  const cols = 3;
-  const bw = W / cols;
-  const bh = H / rows;
-  const color = document.createElement('canvas');
-  const bump = document.createElement('canvas');
-  color.width = bump.width = W;
-  color.height = bump.height = H;
-  const c = color.getContext('2d');
-  const b = bump.getContext('2d');
-  c.fillStyle = '#2b1b15'; // joints
-  c.fillRect(0, 0, W, H);
-  b.fillStyle = '#000';
-  b.fillRect(0, 0, W, H);
-
-  for (let r = 0; r < rows; r += 1) {
-    const offset = r % 2 ? bw / 2 : 0;
-    for (let col = -1; col <= cols; col += 1) {
-      const x = col * bw + offset;
-      const y = r * bh;
-      const hue = 10 + Math.random() * 12;
-      const sat = 32 + Math.random() * 18;
-      const light = 24 + Math.random() * 12;
-      c.fillStyle = `hsl(${hue} ${sat}% ${light}%)`;
-      c.fillRect(x + 3, y + 3, bw - 6, bh - 6);
-      b.fillStyle = `hsl(0 0% ${60 + Math.random() * 30}%)`;
-      b.fillRect(x + 3, y + 3, bw - 6, bh - 6);
-    }
-  }
-  for (let i = 0; i < 500; i += 1) {
-    c.fillStyle = `rgba(0,0,0,${Math.random() * 0.18})`;
-    c.fillRect(Math.random() * W, Math.random() * H, 2 + Math.random() * 6, 2 + Math.random() * 4);
-  }
-  return { color, bump };
+function makeBeam(color, height, radius) {
+  const geo = new THREE.CylinderGeometry(radius * 0.12, radius, height, 32, 1, true);
+  const mat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    uniforms: { c: { value: new THREE.Color(color) } },
+    vertexShader: 'varying float vY; void main(){ vY = uv.y; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+    fragmentShader: 'uniform vec3 c; varying float vY; void main(){ gl_FragColor = vec4(c, 0.22*pow(1.0-vY, 1.8)); }',
+  });
+  return new THREE.Mesh(geo, mat);
 }
 
-function buildWall(scene) {
-  const { color, bump } = brickTextures();
-  const map = srgb(new THREE.CanvasTexture(color));
-  const bumpMap = new THREE.CanvasTexture(bump);
-  for (const tex of [map, bumpMap]) {
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(7, 7);
+function backdropTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 512;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(128, 150, 10, 128, 250, 330);
+  grad.addColorStop(0, '#14264f');
+  grad.addColorStop(0.5, '#08112b');
+  grad.addColorStop(1, '#02040b');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 256, 512);
+  // lignes de scène très discrètes
+  g.strokeStyle = 'rgba(80,130,255,0.07)';
+  for (let i = 0; i < 12; i += 1) {
+    g.beginPath();
+    g.moveTo(0, 330 + i * 16);
+    g.lineTo(256, 330 + i * 16);
+    g.stroke();
   }
+  return srgb(new THREE.CanvasTexture(c));
+}
+
+function buildArena(scene) {
   const wall = new THREE.Mesh(
-    new THREE.PlaneGeometry(3200, 3200),
-    new THREE.MeshStandardMaterial({ map, bumpMap, bumpScale: 3, roughness: 0.95, metalness: 0 }),
+    new THREE.PlaneGeometry(3000, 3000),
+    new THREE.MeshBasicMaterial({ map: backdropTexture() }),
   );
-  wall.position.z = -42;
-  wall.receiveShadow = true;
+  wall.position.set(0, -100, -60);
   scene.add(wall);
 
-  // fond en bois derrière la cible, comme un caisson
-  const backboard = new THREE.Mesh(
-    new THREE.BoxGeometry(470, 470, 24),
-    new THREE.MeshStandardMaterial({ color: 0x3a2517, roughness: 0.75 }),
+  // grand pied noir sous la cible, comme dans l'arène
+  const pillar = new THREE.Mesh(
+    new THREE.CylinderGeometry(46, 60, 700, 40),
+    new THREE.MeshStandardMaterial({ color: 0x07090f, roughness: 0.35, metalness: 0.7 }),
   );
-  backboard.position.set(0, 0, -30);
-  backboard.castShadow = true;
-  backboard.receiveShadow = true;
-  scene.add(backboard);
-}
+  pillar.position.set(0, -560, -40);
+  scene.add(pillar);
 
-function buildLamp(scene) {
-  const brass = new THREE.MeshStandardMaterial({ color: 0x9a7a35, metalness: 1, roughness: 0.35 });
-  const enamel = new THREE.MeshStandardMaterial({
-    color: 0x1f5a45,
-    metalness: 0.3,
+  // petits projecteurs bleus de chaque côté de la cible
+  const lampMat = new THREE.MeshStandardMaterial({
+    color: 0x1b3d9a,
+    emissive: 0x2a6bff,
+    emissiveIntensity: 1.2,
     roughness: 0.4,
-    side: THREE.DoubleSide,
   });
+  for (const side of [-1, 1]) {
+    const lamp = new THREE.Mesh(new THREE.BoxGeometry(44, 70, 40), lampMat);
+    lamp.position.set(side * 232, 135, -20);
+    lamp.rotation.z = side * -0.55;
+    scene.add(lamp);
+  }
 
-  // bras fixé au mur
-  const arm = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, LAMP_POS.z + 42, 12), brass);
-  arm.rotation.x = Math.PI / 2;
-  arm.position.set(0, LAMP_POS.y + 12, (LAMP_POS.z - 42) / 2);
-  scene.add(arm);
-
-  // abat-jour
-  const profile = [[6, 16], [10, 12], [38, -4], [70, -34], [73, -38], [70, -38]].map(
-    ([r, y]) => new THREE.Vector2(r, y),
-  );
-  const shade = new THREE.Mesh(new THREE.LatheGeometry(profile, 32), enamel);
-  shade.position.copy(LAMP_POS);
-  scene.add(shade);
-
-  // ampoule
-  const bulb = new THREE.Mesh(
-    new THREE.SphereGeometry(13, 16, 12),
-    new THREE.MeshBasicMaterial({ color: 0xfff2cf }),
-  );
-  bulb.position.set(LAMP_POS.x, LAMP_POS.y - 18, LAMP_POS.z);
-  scene.add(bulb);
+  // faisceaux de lumière
+  const beams = new THREE.Group();
+  const b1 = makeBeam(0x6fa8ff, 520, 120);
+  b1.position.set(0, 20, -50);
+  beams.add(b1);
+  for (const side of [-1, 1]) {
+    const b = makeBeam(0x3a78ff, 360, 70);
+    b.position.set(side * 300, -300, -50);
+    b.rotation.z = side * 0.06;
+    b.scale.y = -1;
+    beams.add(b);
+  }
+  scene.add(beams);
 }
 
-function sisalBump(size) {
+function neonBoardTexture(size) {
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const g = c.getContext('2d');
-  g.fillStyle = '#808080';
+  const k = size / (BOARD_RADIUS * 2);
+  const cx = size / 2;
+  const cy = size / 2;
+  const sector = Math.PI / 10;
+
+  g.fillStyle = '#050816';
   g.fillRect(0, 0, size, size);
-  for (let i = 0; i < 9000; i += 1) {
-    const v = 90 + Math.random() * 110;
-    g.strokeStyle = `rgba(${v},${v},${v},0.5)`;
-    g.lineWidth = 1 + Math.random() * 1.5;
-    const x = Math.random() * size;
-    const y = Math.random() * size;
-    const a = Math.random() * Math.PI;
+
+  function wedge(rIn, rOut, index, from, to) {
+    const a0 = index * sector - sector / 2 - Math.PI / 2;
+    const a1 = a0 + sector;
+    const grad = g.createRadialGradient(cx, cy, rIn * k, cx, cy, rOut * k);
+    grad.addColorStop(0, from);
+    grad.addColorStop(1, to);
     g.beginPath();
-    g.moveTo(x, y);
-    g.lineTo(x + Math.cos(a) * 14, y + Math.sin(a) * 14);
-    g.stroke();
+    g.arc(cx, cy, rOut * k, a0, a1);
+    g.arc(cx, cy, rIn * k, a1, a0, true);
+    g.closePath();
+    g.fillStyle = grad;
+    g.fill();
+  }
+
+  for (let i = 0; i < 20; i += 1) {
+    const dark = i % 2 === 0;
+    // secteurs : dégradé violet au centre vers bleu vers le bord
+    const [a, b] = dark ? ['#7a22d8', '#16269e'] : ['#35a0ff', '#1646d8'];
+    wedge(RADII.outerBull, RADII.trebleIn, i, a, b);
+    wedge(RADII.trebleOut, RADII.doubleIn, i, a, b);
+    const ring = dark ? '#ff2a55' : '#ffb02e';
+    wedge(RADII.trebleIn, RADII.trebleOut, i, ring, ring);
+    wedge(RADII.doubleIn, RADII.doubleOut, i, ring, ring);
+  }
+
+  g.beginPath();
+  g.arc(cx, cy, RADII.outerBull * k, 0, Math.PI * 2);
+  g.fillStyle = '#19e6d0';
+  g.fill();
+  g.beginPath();
+  g.arc(cx, cy, RADII.bull * k, 0, Math.PI * 2);
+  g.fillStyle = '#ff2a55';
+  g.fill();
+
+  // couronne sombre avec cercle et chiffres blancs
+  g.strokeStyle = '#eaf2ff';
+  g.lineWidth = 1.6 * k;
+  g.beginPath();
+  g.arc(cx, cy, 196 * k, 0, Math.PI * 2);
+  g.stroke();
+  g.fillStyle = '#f2f6ff';
+  g.font = `600 ${Math.round(17 * k)}px system-ui, sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  for (let i = 0; i < 20; i += 1) {
+    const a = i * sector - Math.PI / 2;
+    g.fillText(String(ORDER[i]), cx + Math.cos(a) * 182 * k, cy + Math.sin(a) * 182 * k);
   }
   return c;
 }
 
 function buildBoard(scene) {
-  const faceTex = srgb(new THREE.CanvasTexture(drawBoardTexture(2048)));
-  const bumpMap = new THREE.CanvasTexture(sisalBump(1024));
-
-  const face = new THREE.Mesh(
-    new THREE.CircleGeometry(BOARD_RADIUS, 128),
-    new THREE.MeshStandardMaterial({ map: faceTex, bumpMap, bumpScale: 1.6, roughness: 0.92, metalness: 0 }),
-  );
+  const faceTex = srgb(new THREE.CanvasTexture(neonBoardTexture(2048)));
+  faceTex.anisotropy = 4;
+  const faceMat = new THREE.MeshStandardMaterial({
+    map: faceTex,
+    color: 0x6a6a6a,
+    emissive: 0xffffff,
+    emissiveMap: faceTex,
+    emissiveIntensity: 1,
+    roughness: 0.8,
+    metalness: 0,
+    toneMapped: false,
+  });
+  const face = new THREE.Mesh(new THREE.CircleGeometry(BOARD_RADIUS, 128), faceMat);
   face.receiveShadow = true;
   scene.add(face);
 
-  // épaisseur de la cible
-  const bodyGeo = new THREE.CylinderGeometry(BOARD_RADIUS, BOARD_RADIUS, 40, 96);
+  const bodyGeo = new THREE.CylinderGeometry(BOARD_RADIUS + 22, BOARD_RADIUS + 22, 40, 96);
   bodyGeo.rotateX(Math.PI / 2);
-  const body = new THREE.Mesh(bodyGeo, new THREE.MeshStandardMaterial({ color: 0x20140e, roughness: 0.9 }));
+  const body = new THREE.Mesh(bodyGeo, new THREE.MeshStandardMaterial({ color: 0x080b16, roughness: 0.5 }));
   body.position.z = -20.5;
   scene.add(body);
 
-  // couronne en caoutchouc, avec un vrai profil en relief
-  const profile = [[197, -6], [199, 3], [203, 10], [212, 14], [220, 9], [223, -6]].map(
+  const profile = [[197, -6], [199, 3], [203, 8], [212, 11], [220, 8], [223, -6]].map(
     ([r, y]) => new THREE.Vector2(r, y),
   );
   const surroundGeo = new THREE.LatheGeometry(profile, 128);
   surroundGeo.rotateX(Math.PI / 2);
   const surround = new THREE.Mesh(
     surroundGeo,
-    new THREE.MeshStandardMaterial({ color: 0x15100e, roughness: 0.65, metalness: 0.05, side: THREE.DoubleSide }),
+    new THREE.MeshStandardMaterial({ color: 0x0a0e1c, roughness: 0.4, metalness: 0.3, side: THREE.DoubleSide }),
   );
-  surround.castShadow = true;
-  surround.receiveShadow = true;
   scene.add(surround);
 
-  // fils métalliques en relief
-  const wireMat = new THREE.MeshStandardMaterial({ color: 0xd8d8d8, metalness: 1, roughness: 0.28 });
+  // liseré lumineux autour de la cible
+  const glow = new THREE.Mesh(
+    new THREE.TorusGeometry(BOARD_RADIUS + 3, 1.6, 8, 160),
+    new THREE.MeshBasicMaterial({ color: 0xcfe0ff, toneMapped: false }),
+  );
+  glow.position.z = 3;
+  scene.add(glow);
+
+  // fils fins et lumineux
+  const wireMat = new THREE.MeshBasicMaterial({ color: 0xdfe9ff, toneMapped: false });
   for (const r of [RADII.outerBull, RADII.trebleIn, RADII.trebleOut, RADII.doubleIn, RADII.doubleOut]) {
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.5, 6, 180), wireMat);
-    ring.position.z = 0.7;
-    ring.castShadow = true;
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.45, 6, 180), wireMat);
+    ring.position.z = 0.6;
     scene.add(ring);
   }
   const wireLen = RADII.doubleOut - RADII.outerBull;
   const wireMid = (RADII.doubleOut + RADII.outerBull) / 2;
-  const wireGeo = new THREE.BoxGeometry(0.8, wireLen, 1.4);
+  const wireGeo = new THREE.BoxGeometry(0.7, wireLen, 1.2);
   for (let i = 0; i < 20; i += 1) {
     const a = i * (Math.PI / 10) - Math.PI / 20;
     const wire = new THREE.Mesh(wireGeo, wireMat);
-    wire.position.set(Math.sin(a) * wireMid, Math.cos(a) * wireMid, 0.7);
+    wire.position.set(Math.sin(a) * wireMid, Math.cos(a) * wireMid, 0.6);
     wire.rotation.z = -a;
-    wire.castShadow = true;
     scene.add(wire);
   }
-  const bullRing = new THREE.Mesh(new THREE.TorusGeometry(RADII.bull, 0.5, 6, 48), wireMat);
-  bullRing.position.z = 0.7;
-  scene.add(bullRing);
+  return { faceMat };
 }
 
-// Dessine la cible dans un canvas carré qui couvre [-200 ; 200] mm.
-function drawBoardTexture(size) {
+// ---------- Tours de cubes (les scores) ----------
+
+const TOWER = { w: 92, maxH: 240, base: -470, x: 148, cell: 23 };
+
+function cubeTexture(hex) {
   const c = document.createElement('canvas');
-  c.width = c.height = size;
+  c.width = c.height = 64;
   const g = c.getContext('2d');
-  const k = size / (BOARD_RADIUS * 2); // px par mm
-  const cx = size / 2;
-  const cy = size / 2;
-  const sector = Math.PI / 10;
+  g.fillStyle = hex;
+  g.fillRect(0, 0, 64, 64);
+  g.fillStyle = 'rgba(255,255,255,0.28)';
+  g.fillRect(0, 0, 64, 5);
+  g.fillRect(0, 0, 5, 64);
+  g.fillStyle = 'rgba(0,0,0,0.38)';
+  g.fillRect(0, 59, 64, 5);
+  g.fillRect(59, 0, 5, 64);
+  const t = srgb(new THREE.CanvasTexture(c));
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
 
-  g.fillStyle = '#0b0b0b';
-  g.fillRect(0, 0, size, size);
+function buildTowers(scene) {
+  const towers = [];
+  const colors = [
+    { hex: '#ff2f8f', css: 0xff2f8f },
+    { hex: '#2fc4ff', css: 0x2fc4ff },
+  ];
+  colors.forEach((col, i) => {
+    const tex = cubeTexture(col.hex);
+    const mat = new THREE.MeshBasicMaterial({ map: tex, toneMapped: false });
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(TOWER.w, 1, TOWER.w), mat);
+    const x = (i === 0 ? -1 : 1) * TOWER.x;
+    mesh.position.set(x, TOWER.base, -5);
+    scene.add(mesh);
+    towers.push({ mesh, tex, x, color: col.css, current: 1, target: 1 });
+  });
 
-  const BLACK = '#171513';
-  const CREAM = '#e9dcb4';
-  const RED = '#b8242b';
-  const GREEN = '#1d7f49';
+  // cubes qui volent quand le score baisse
+  const cubeGeo = new THREE.BoxGeometry(14, 14, 14);
+  const cubes = [];
+  for (let i = 0; i < 48; i += 1) {
+    const m = new THREE.Mesh(cubeGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, toneMapped: false }));
+    m.visible = false;
+    scene.add(m);
+    cubes.push({ m, vx: 0, vy: 0, vz: 0, life: 0, spin: 0 });
+  }
+  let nextCube = 0;
 
-  // un secteur : de rIn à rOut, centré sur l'angle theta (0 = haut, sens horaire)
-  function wedge(rIn, rOut, index, color) {
-    const a0 = index * sector - sector / 2 - Math.PI / 2;
-    const a1 = a0 + sector;
-    g.beginPath();
-    g.arc(cx, cy, rOut * k, a0, a1);
-    g.arc(cx, cy, rIn * k, a1, a0, true);
-    g.closePath();
-    g.fillStyle = color;
-    g.fill();
+  function layout(t) {
+    const h = Math.max(2, TOWER.maxH * t.current);
+    t.mesh.scale.y = h;
+    t.mesh.position.y = TOWER.base + h / 2;
+    t.tex.repeat.set(TOWER.w / TOWER.cell, h / TOWER.cell);
+  }
+  towers.forEach(layout);
+
+  function set(fractions, burst = true) {
+    fractions.forEach((f, i) => {
+      const t = towers[i];
+      const next = Math.min(1, Math.max(0, f));
+      if (burst && next < t.target - 0.002) {
+        const n = Math.min(14, Math.max(4, Math.round((t.target - next) * 90)));
+        const top = TOWER.base + TOWER.maxH * t.current;
+        for (let k = 0; k < n; k += 1) {
+          const c = cubes[nextCube];
+          nextCube = (nextCube + 1) % cubes.length;
+          c.m.material.color.setHex(t.color);
+          c.m.material.opacity = 1;
+          c.m.position.set(t.x + (Math.random() - 0.5) * TOWER.w * 0.8, top, 20 + Math.random() * 20);
+          c.vx = (Math.random() - 0.5) * 260;
+          c.vy = 120 + Math.random() * 260;
+          c.vz = 40 + Math.random() * 120;
+          c.spin = (Math.random() - 0.5) * 8;
+          c.life = 1;
+          c.m.visible = true;
+        }
+      }
+      t.target = next;
+      if (!burst) {
+        t.current = next;
+        layout(t);
+      }
+    });
   }
 
-  for (let i = 0; i < 20; i += 1) {
-    const dark = i % 2 === 0;
-    const single = dark ? BLACK : CREAM;
-    const ring = dark ? RED : GREEN;
-    wedge(RADII.outerBull, RADII.trebleIn, i, single);
-    wedge(RADII.trebleIn, RADII.trebleOut, i, ring);
-    wedge(RADII.trebleOut, RADII.doubleIn, i, single);
-    wedge(RADII.doubleIn, RADII.doubleOut, i, ring);
+  function update(dt) {
+    for (const t of towers) {
+      if (Math.abs(t.current - t.target) > 0.0005) {
+        t.current += (t.target - t.current) * (1 - Math.exp(-dt * 6));
+        layout(t);
+      }
+    }
+    for (const c of cubes) {
+      if (c.life <= 0) continue;
+      c.life -= dt * 0.9;
+      c.vy -= 700 * dt;
+      c.m.position.x += c.vx * dt;
+      c.m.position.y += c.vy * dt;
+      c.m.position.z += c.vz * dt;
+      c.m.rotation.x += c.spin * dt;
+      c.m.rotation.y += c.spin * dt;
+      c.m.material.opacity = Math.max(0, c.life);
+      if (c.life <= 0) c.m.visible = false;
+    }
   }
-
-  g.beginPath();
-  g.arc(cx, cy, RADII.outerBull * k, 0, Math.PI * 2);
-  g.fillStyle = GREEN;
-  g.fill();
-  g.beginPath();
-  g.arc(cx, cy, RADII.bull * k, 0, Math.PI * 2);
-  g.fillStyle = RED;
-  g.fill();
-
-  // numéros
-  g.fillStyle = '#f4f4f4';
-  g.font = `bold ${Math.round(17 * k)}px system-ui, sans-serif`;
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  for (let i = 0; i < 20; i += 1) {
-    const a = i * sector - Math.PI / 2;
-    const r = 185 * k;
-    g.fillText(String(ORDER[i]), cx + Math.cos(a) * r, cy + Math.sin(a) * r);
-  }
-
-  return c;
+  return { set, update };
 }
 
 // ---------- Fléchette ----------

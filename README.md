@@ -6,7 +6,7 @@ Pas de jetons, pas d'achat : tout se gagne en jouant.
 ## Où on en est (étape 1)
 
 - Pub en briques, cible en relief avec fils métalliques, fléchettes 3D avec ombres (Three.js)
-- Contrôle comme Darts of Fury : on pose le doigt, on fait glisser la fléchette sur la cible, on relâche pour lancer (la main tremble de plus en plus si on attend)
+- Contrôle comme Darts of Fury : on pose le doigt, on fait glisser la fléchette sur la cible, on relâche pour lancer (aucun hasard : le même geste donne toujours le même tir)
 - Match en 201 contre Gérard, 3 fléchettes par volée, bust géré
 - Sortie libre par défaut (le double out est prêt dans le code, à activer dans `src/main.js`)
 - Phrases d'ambiance dans `src/jokes.js`
@@ -34,9 +34,9 @@ Tout est dans `src/throw.js` (`AIM_CONFIG`) :
 | Réglage | Effet |
 | --- | --- |
 | `fingerOffsetPx` | décalage de la fléchette au-dessus du doigt, pour la voir |
-| `swayStart` / `swayMax` | tremblement de la main (mm) au début et au maximum |
-| `swayRamp` | temps (s) pour passer du tremblement minimum au maximum |
-| `jitter` | petite imprécision aléatoire au lâcher (mm) |
+| `swayStart` / `swayMax` | dérive lente et régulière de la main (mm) au début et au maximum |
+| `swayRamp` | temps (s) pour passer de la dérive minimum à la maximum |
+| `leadSeconds` / `maxLead` | élan au lâcher : la fléchette continue dans le sens du mouvement du doigt |
 
 La difficulté de Gérard se règle avec `opponentSigma` dans `src/main.js`.
 

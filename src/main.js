@@ -1,7 +1,7 @@
 import { createScene } from './scene.js';
 import { scoreAt } from './board.js';
 import { X01Game } from './game.js';
-import { AIM_CONFIG, aimToHit, clampToRadius, newPhases, swayAt } from './throw.js';
+import { AIM_CONFIG, FIXED_PHASES, aimToHit, clampToRadius, releaseLead, swayAt } from './throw.js';
 import { aiThrow } from './ai.js';
 import { calloutFor } from './jokes.js';
 
@@ -22,20 +22,34 @@ const scene = createScene(glCanvas);
 // ---------- Visée : on fait glisser la fléchette, on relâche pour lancer ----------
 
 let waiting = null; // resolve() de la promesse en attente d'un lancer
-let aiming = null; // { t0, phases, fx, fy, point }
+let aiming = null; // { t0, fx, fy, trail }
 
 function currentAim() {
   const held = (performance.now() - aiming.t0) / 1000;
   const board = clampToRadius(scene.screenToBoard(aiming.fx, aiming.fy - AIM_CONFIG.fingerOffsetPx));
-  const sway = swayAt(held, aiming.phases);
+  const sway = swayAt(held, FIXED_PHASES);
   return { held, board, shown: { x: board.x + sway.x, y: board.y + sway.y } };
 }
 
 function aimTick() {
   if (!aiming) return;
-  const { shown } = currentAim();
+  const { board, shown } = currentAim();
   scene.setAim(shown.x, shown.y);
+  // on garde les 200 dernières ms du doigt pour mesurer sa vitesse au lâcher
+  const now = performance.now();
+  aiming.trail.push({ t: now, x: board.x, y: board.y });
+  while (aiming.trail.length > 2 && now - aiming.trail[0].t > 200) aiming.trail.shift();
   requestAnimationFrame(aimTick);
+}
+
+// Vitesse du doigt (mm/s) sur les ~100 dernières ms.
+function fingerVelocity(endPoint) {
+  const now = performance.now();
+  const ref = aiming.trail.find((p) => now - p.t <= 100);
+  if (!ref) return { x: 0, y: 0 };
+  const dt = (now - ref.t) / 1000;
+  if (dt < 0.02) return { x: 0, y: 0 };
+  return { x: (endPoint.x - ref.x) / dt, y: (endPoint.y - ref.y) / dt };
 }
 
 glCanvas.addEventListener('pointerdown', (e) => {
@@ -43,9 +57,9 @@ glCanvas.addEventListener('pointerdown', (e) => {
   glCanvas.setPointerCapture(e.pointerId);
   aiming = {
     t0: performance.now(),
-    phases: newPhases(),
     fx: e.clientX,
     fy: e.clientY,
+    trail: [],
   };
   setHint('');
   scene.setAimActive(true);
@@ -61,7 +75,7 @@ glCanvas.addEventListener('pointermove', (e) => {
 function release(cancelled) {
   if (!aiming) return;
   const { held, board } = currentAim();
-  const phases = aiming.phases;
+  const lead = releaseLead(fingerVelocity(board));
   aiming = null;
 
   if (cancelled || !waiting) {
@@ -70,7 +84,7 @@ function release(cancelled) {
   }
   const resolve = waiting;
   waiting = null;
-  resolve(aimToHit(board, held, phases));
+  resolve(aimToHit(board, held, lead));
 }
 glCanvas.addEventListener('pointerup', () => release(false));
 glCanvas.addEventListener('pointercancel', () => release(true));

@@ -5,7 +5,7 @@ import { ORDER, RADII } from './board.js';
 
 const BOARD_RADIUS = 200; // cible + couronne des numéros
 const FOV = 40;
-const DART_SCALE = 1.4;
+const DART_SCALE = 1.6;
 const HOVER_Z = 150; // hauteur de la fléchette au-dessus de la cible pendant la visée
 const LAMP_POS = new THREE.Vector3(0, 415, 150);
 
@@ -70,7 +70,7 @@ export function createScene(canvas) {
     camera.aspect = w / h;
 
     // On cadre la cible : toute la largeur en portrait, toute la hauteur en paysage.
-    const halfH = Math.max(310, 285 / camera.aspect);
+    const halfH = Math.max(290, 243 / camera.aspect);
     camDistance = halfH / Math.tan((FOV / 2) * Math.PI / 180);
     // La cible est remontée dans l'écran pour laisser la place à la fléchette en bas.
     camBaseY = -halfH * 0.2;
@@ -105,15 +105,6 @@ export function createScene(canvas) {
       aim.active = false;
     }
   }
-
-  // petit réticule sur la cible : le doigt cache la fléchette, lui montre où elle pointe
-  const reticle = new THREE.Mesh(
-    new THREE.RingGeometry(8, 10, 40),
-    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthTest: false }),
-  );
-  reticle.renderOrder = 10;
-  reticle.visible = false;
-  scene.add(reticle);
 
   // ---------- Étincelles à l'impact ----------
   const SPARKS = 18;
@@ -157,8 +148,8 @@ export function createScene(canvas) {
       scene.add(dart);
 
       const tilt = {
-        yaw: (Math.random() - 0.5) * 0.35,
-        pitch: 0.12 + Math.random() * 0.14,
+        yaw: (Math.random() - 0.5) * 0.14,
+        pitch: 0.04 + Math.random() * 0.07,
       };
       const onBoard = Math.hypot(hit.x, hit.y) <= BOARD_RADIUS + 38;
       const end = new THREE.Vector3(hit.x, hit.y, onBoard ? -9 : -28);
@@ -198,7 +189,7 @@ export function createScene(canvas) {
           dart,
           base: dart.quaternion.clone(),
           t0: performance.now(),
-          amp: 0.1 + Math.random() * 0.06,
+          amp: 0.035 + Math.random() * 0.025,
           sign: Math.random() < 0.5 ? -1 : 1,
         });
         resolve();
@@ -226,9 +217,6 @@ export function createScene(canvas) {
     camera.position.x = Math.sin(t * 0.5) * 2.5;
     camera.position.y = camBaseY + Math.sin(t * 0.8) * 1.5;
     camera.lookAt(0, camBaseY, 0);
-
-    reticle.visible = hand.visible && aim.active;
-    reticle.position.set(aim.x, aim.y, 1.5);
 
     // fléchette en main
     if (hand.visible) {
@@ -353,7 +341,7 @@ function buildWall(scene) {
 
   // fond en bois derrière la cible, comme un caisson
   const backboard = new THREE.Mesh(
-    new THREE.BoxGeometry(560, 560, 24),
+    new THREE.BoxGeometry(470, 470, 24),
     new THREE.MeshStandardMaterial({ color: 0x3a2517, roughness: 0.75 }),
   );
   backboard.position.set(0, 0, -30);
@@ -434,7 +422,7 @@ function buildBoard(scene) {
   scene.add(body);
 
   // couronne en caoutchouc, avec un vrai profil en relief
-  const profile = [[197, -6], [199, 3], [205, 11], [221, 15], [235, 9], [240, -6]].map(
+  const profile = [[197, -6], [199, 3], [203, 10], [212, 14], [220, 9], [223, -6]].map(
     ([r, y]) => new THREE.Vector2(r, y),
   );
   const surroundGeo = new THREE.LatheGeometry(profile, 128);
@@ -548,22 +536,20 @@ function flightTexture() {
   c.width = 128;
   c.height = 256;
   const g = c.getContext('2d');
-  const grad = g.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, '#e23b32');
-  grad.addColorStop(1, '#8d1a1c');
-  g.fillStyle = grad;
+  g.fillStyle = '#d92f27';
   g.fillRect(0, 0, 128, 256);
-  g.fillStyle = '#16100e';
-  g.fillRect(0, 0, 18, 256); // bande côté axe
+  g.fillStyle = '#15100e';
+  g.fillRect(0, 0, 16, 256); // bande côté axe
+  g.fillRect(0, 230, 128, 26); // liseré du bord arrière
   g.fillStyle = '#ffd23f';
   g.beginPath();
-  g.moveTo(78, 40);
-  g.lineTo(46, 130);
-  g.lineTo(70, 130);
-  g.lineTo(52, 220);
-  g.lineTo(104, 112);
-  g.lineTo(78, 112);
-  g.lineTo(100, 40);
+  g.moveTo(84, 30);
+  g.lineTo(44, 130);
+  g.lineTo(72, 130);
+  g.lineTo(50, 214);
+  g.lineTo(112, 108);
+  g.lineTo(82, 108);
+  g.lineTo(108, 30);
   g.closePath();
   g.fill();
   return srgb(new THREE.CanvasTexture(c));
@@ -572,35 +558,38 @@ function flightTexture() {
 function getDartParts() {
   if (dartParts) return dartParts;
 
-  const tip = lathe([[2.1, -28], [1.6, -20], [1.1, -10], [0.5, -2], [0, 0]], 14);
+  // pointe
+  const tip = lathe([[2.4, -26], [1.8, -18], [1.2, -9], [0.55, -2], [0, 0]], 14);
 
-  const bp = [[2.0, -27], [3.1, -30]];
-  for (let y = -30; y > -69; y -= 2.4) {
-    bp.push([3.5, y], [3.5, y - 0.9], [3.0, y - 1.1], [3.0, y - 1.9]);
+  // corps (barrel) plus épais, avec un quadrillage de grip
+  const bp = [[2.6, -25], [4.1, -29]];
+  for (let y = -29; y > -66; y -= 2.6) {
+    bp.push([4.5, y], [4.5, y - 1], [3.8, y - 1.2], [3.8, y - 2.1]);
   }
-  bp.push([3.3, -71], [2.3, -76]);
+  bp.push([4.2, -67], [2.7, -72]);
   bp.reverse(); // y croissant
-  const barrel = lathe(bp, 24);
+  const barrel = lathe(bp, 28);
 
+  // tige courte avec anneau
   const shaft = lathe(
-    [[2.2, -112], [2.2, -104], [1.8, -103], [1.8, -100], [2.2, -99], [2.2, -90], [1.8, -89], [1.8, -86], [2.2, -85], [2.2, -76]],
-    16,
+    [[2.7, -104], [2.7, -92], [3.3, -91], [3.3, -88], [2.7, -87], [2.7, -72]],
+    18,
   );
 
-  // un aileron : x = distance à l'axe, y = position le long de l'axe
+  // un aileron "standard" arrondi : x = distance à l'axe, y = position le long de l'axe
   const shape = new THREE.Shape();
-  shape.moveTo(0, -104);
-  shape.lineTo(6, -105);
-  shape.lineTo(20, -126);
-  shape.lineTo(21, -146);
-  shape.lineTo(0, -146);
+  shape.moveTo(0, -94);
+  shape.lineTo(4, -94);
+  shape.quadraticCurveTo(25, -104, 27, -126);
+  shape.quadraticCurveTo(27, -142, 14, -148);
+  shape.lineTo(0, -148);
   shape.closePath();
-  const flight = new THREE.ShapeGeometry(shape);
+  const flight = new THREE.ShapeGeometry(shape, 12);
   const pos = flight.attributes.position;
   const uv = new Float32Array(pos.count * 2);
   for (let i = 0; i < pos.count; i += 1) {
-    uv[i * 2] = pos.getX(i) / 21;
-    uv[i * 2 + 1] = (pos.getY(i) + 146) / 42;
+    uv[i * 2] = pos.getX(i) / 27;
+    uv[i * 2 + 1] = (pos.getY(i) + 148) / 54;
   }
   flight.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
 
@@ -610,12 +599,12 @@ function getDartParts() {
     shaft,
     flight,
     steel: new THREE.MeshStandardMaterial({ color: 0xdde0e5, metalness: 1, roughness: 0.2 }),
-    tungsten: new THREE.MeshStandardMaterial({ color: 0x8a909a, metalness: 1, roughness: 0.3, side: THREE.DoubleSide }),
+    tungsten: new THREE.MeshStandardMaterial({ color: 0x9aa0aa, metalness: 1, roughness: 0.28, side: THREE.DoubleSide }),
     anodized: new THREE.MeshStandardMaterial({ color: 0x2f6fd8, metalness: 0.85, roughness: 0.35, side: THREE.DoubleSide }),
     flightMat: new THREE.MeshStandardMaterial({
       map: flightTexture(),
       side: THREE.DoubleSide,
-      roughness: 0.65,
+      roughness: 0.6,
       metalness: 0,
     }),
   };

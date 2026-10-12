@@ -2,10 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { scoreAt, segmentPoint, ORDER } from '../src/board.js';
 import { X01Game } from '../src/game.js';
-import { AIM_CONFIG, aimToHit, clampToRadius, swayAmplitude, swayAt } from '../src/throw.js';
+import { AIM_CONFIG, aimToHit, clampToRadius, releaseLead, swayAmplitude, swayAt } from '../src/throw.js';
 import { chooseTarget, aiThrow } from '../src/ai.js';
 
-const noRandom = () => 0.5; // sans effet quand jitter vaut 0
 
 test('centre et anneaux', () => {
   assert.equal(scoreAt(0, 0).score, 50);
@@ -83,36 +82,41 @@ test('X01 : double out obligatoire', () => {
   assert.equal(g3.throwDart(scoreAt(0, 134)).bust, true); // 21 - 20 = 1 : bust
 });
 
-test('visée : le tremblement grandit avec le temps et reste borné', () => {
+test('visée : la dérive grandit avec le temps et reste bornée', () => {
   assert.ok(swayAmplitude(0) < swayAmplitude(2));
   assert.ok(swayAmplitude(2) < swayAmplitude(10));
   assert.equal(swayAmplitude(10), AIM_CONFIG.swayMax);
-  const phases = [0.3, 1.1, 2.2, 0.7];
   for (let t = 0; t < 8; t += 0.25) {
-    const s = swayAt(t, phases);
+    const s = swayAt(t);
     const a = swayAmplitude(t);
     assert.ok(Math.abs(s.x) <= a + 1e-9 && Math.abs(s.y) <= a + 1e-9);
   }
 });
 
-test('visée : une fléchette plus stable tremble moins', () => {
+test('visée : une fléchette plus stable dérive moins', () => {
   assert.ok(swayAmplitude(3, AIM_CONFIG, 2) < swayAmplitude(3, AIM_CONFIG, 1));
 });
 
-test('visée : sans jitter, impact = point visé + tremblement', () => {
-  const cfg = { ...AIM_CONFIG, jitter: 0 };
-  const phases = [0.5, 1.5, 2.5, 3.5];
-  const hit = aimToHit({ x: 10, y: -20 }, 1.5, phases, noRandom, cfg);
-  const s = swayAt(1.5, phases, cfg);
-  assert.ok(Math.abs(hit.x - (10 + s.x)) < 1e-9);
-  assert.ok(Math.abs(hit.y - (-20 + s.y)) < 1e-9);
+test('visée : le même geste donne exactement le même tir', () => {
+  const lead = releaseLead({ x: 120, y: -40 });
+  const a = aimToHit({ x: 10, y: -20 }, 1.5, lead);
+  const b = aimToHit({ x: 10, y: -20 }, 1.5, lead);
+  assert.deepEqual(a, b);
 });
 
-test('visée : un doigt posé tout de suite sur le triple 20 le touche', () => {
-  const cfg = { ...AIM_CONFIG, jitter: 0, swayStart: 0, swayMax: 0 };
+test('visée : sans dérive ni élan, l\'impact est le point visé', () => {
+  const cfg = { ...AIM_CONFIG, swayStart: 0, swayMax: 0 };
   const target = segmentPoint(20, 'treble');
-  const hit = aimToHit(target, 0, [0, 0, 0, 0], noRandom, cfg);
+  const hit = aimToHit(target, 3, { x: 0, y: 0 }, undefined, cfg);
   assert.equal(scoreAt(hit.x, hit.y).label, 'T20');
+});
+
+test('visée : l\'élan prolonge le mouvement du doigt, avec un plafond', () => {
+  const small = releaseLead({ x: 100, y: 0 });
+  assert.ok(small.x > 0 && small.y === 0);
+  const big = releaseLead({ x: 5000, y: 5000 });
+  assert.ok(Math.abs(Math.hypot(big.x, big.y) - AIM_CONFIG.maxLead) < 1e-9);
+  assert.deepEqual(releaseLead({ x: 0, y: 0 }), { x: 0, y: 0 });
 });
 
 test('visée : on reste dans le rayon autorisé', () => {

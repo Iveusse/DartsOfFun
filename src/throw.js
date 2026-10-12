@@ -8,11 +8,13 @@ export const AIM_CONFIG = {
   // Dérive lente de la main (mm) : part de swayStart et monte jusqu'à swayMax en swayRamp secondes.
   // Elle est régulière et part du moment où le doigt se pose : mêmes durées, mêmes dérives.
   swayStart: 1.5,
-  swayMax: 4.5,
+  swayMax: 3,
   swayRamp: 5,
   // Élan au lâcher : la fléchette continue un peu dans le sens du mouvement (secondes de mouvement, mm max).
-  leadSeconds: 0.05,
-  maxLead: 22,
+  leadSeconds: 0.08,
+  maxLead: 40,
+  // La fléchette part en cloche et retombe plus bas que la pointe (mm). Poser la pointe sur le T20 ne suffit pas.
+  drop: 14,
   // Rayon max de visée (mm), pour rester dans l'image.
   maxRadius: 255,
 };
@@ -52,12 +54,12 @@ export function releaseLead(velocity, cfg = AIM_CONFIG) {
   return { x: x * k, y: y * k };
 }
 
-// Point visé + élan + dérive -> point d'impact. Entièrement déterministe.
+// Point visé + élan + dérive - chute de la cloche -> point d'impact. Entièrement déterministe.
 export function aimToHit(aim, held, lead = { x: 0, y: 0 }, phases = FIXED_PHASES, cfg = AIM_CONFIG, stability = 1) {
   const s = swayAt(held, phases, cfg, stability);
   return {
     x: aim.x + lead.x + s.x,
-    y: aim.y + lead.y + s.y,
+    y: aim.y + lead.y + s.y - cfg.drop,
   };
 }
 
